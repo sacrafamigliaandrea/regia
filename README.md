@@ -1,7 +1,5 @@
 # Regia di laboratorio
 
-> **Architettura (v2):** Firebase Realtime Database porta lo stato della lezione e le postazioni collegate (gratis, sempre attivo); LiveKit si collega **solo durante «Guardate me»**, perché i minuti WebRTC si consumano per ogni pagina collegata. Regole del database in `database.rules.json`.
-
 Trasmette lo schermo del Mac docente (una scheda, una finestra o lo schermo intero) a tutte le postazioni, anche via WiFi: il docente invia **un solo flusso** a LiveKit, che lo distribuisce. Nessuna modifica alle app trasmesse.
 
 ```
@@ -27,8 +25,6 @@ regia/
    | `LIVEKIT_API_KEY` | la chiave |
    | `LIVEKIT_API_SECRET` | il segreto |
    | `REGIA_PIN` | il tuo PIN (almeno 4 caratteri) |
-   | `FIREBASE_CONFIG` | configurazione web del progetto Firebase (JSON, non segreta) |
-   | `FIREBASE_SERVICE_ACCOUNT` | chiave JSON dell'account di servizio Firebase (**segreta**) |
 
    → *Deploy*. Se cambi una variabile, serve un *Redeploy*.
 
