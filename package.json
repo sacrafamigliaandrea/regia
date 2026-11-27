@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Regia di laboratorio: trasmissione dello schermo docente alle postazioni via LiveKit",
   "dependencies": {
-    "livekit-server-sdk": "^2.20.1"
+    "livekit-server-sdk": "^2.20.1",
+    "firebase-admin": "^14.5.1"
   }
 }
