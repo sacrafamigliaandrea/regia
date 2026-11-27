@@ -55,7 +55,19 @@
   .riga .campo{width:auto;flex:1;min-width:160px}
 
   /* Modalità */
-  .modi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .modi{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+  .modo.on[data-modo="video"]{border-color:var(--blu);background:var(--blu-chiaro);color:var(--blu)}
+  .yt-box{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:10px}
+  .yt-schermo{position:relative;aspect-ratio:16/9;background:#0B1510;border-radius:10px;overflow:hidden}
+  .yt-schermo iframe{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;border:0}
+  .yt-poster{position:absolute;inset:0;background:#0B1510 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#7F9A88;font-size:14px}
+  .yt-comandi{display:flex;flex-direction:column;gap:12px}
+  .yt-riga{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .yt-riga .btn{padding:9px 14px}
+  #ytBarra{flex:1;accent-color:var(--blu)}
+  #ytTempo{font-variant-numeric:tabular-nums;font-size:13px;color:var(--grigio);min-width:96px;text-align:right}
+  .tag-video{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--blu);background:var(--blu-chiaro);border-radius:999px;padding:2px 8px;margin-left:8px;cursor:pointer}
+  .tag-video svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2}
   .modo{border:2px solid var(--bordo);background:#fff;border-radius:12px;padding:16px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--inchiostro);font-weight:600;transition:all .15s;position:relative}
   .modo svg.i{width:30px;height:30px}
   .modo small{font-weight:400;color:var(--grigio);font-size:12px}
@@ -94,7 +106,7 @@
   .aiuto code{background:var(--carta);border:1px solid var(--bordo);border-radius:6px;padding:8px 10px;display:block;margin-top:8px;font-size:12px;word-break:break-all;color:var(--inchiostro)}
   footer{text-align:center;font-size:12px;color:var(--grigio);padding:10px 0 26px}
   .nascosto{display:none!important}
-  @media (max-width:900px){ main{grid-template-columns:1fr} .modi{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:900px){ main{grid-template-columns:1fr} .modi{grid-template-columns:repeat(2,1fr)} .yt-box{grid-template-columns:1fr} }
 </style>
 </head>
 <body>
@@ -109,6 +121,11 @@
   <symbol id="i-utenti" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 20a6.5 6.5 0 0 0-3-5.5"/></symbol>
   <symbol id="i-lista" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></symbol>
   <symbol id="i-chiave" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.5"/><path d="m11.5 11.5 9-9M17 6l3 3M14.5 8.5l2 2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
+  <symbol id="i-pausa2" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></symbol>
+  <symbol id="i-indietro" viewBox="0 0 24 24"><path d="M11 7 6 12l5 5M18 7l-5 5 5 5"/></symbol>
+  <symbol id="i-avanti" viewBox="0 0 24 24"><path d="m13 7 5 5-5 5M6 7l5 5-5 5"/></symbol>
   <symbol id="i-terminale" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m7 9 3 3-3 3M12.5 15H17"/></symbol>
 </svg>
 
@@ -167,12 +184,35 @@
       <button class="modo" data-modo="live"><kbd>2</kbd><svg class="i"><use href="#i-cast"/></svg>Guardate me<small>il tuo schermo in diretta</small></button>
       <button class="modo" data-modo="occhi"><kbd>3</kbd><svg class="i"><use href="#i-occhio"/></svg>Occhi a me<small>schermo fermo con messaggio</small></button>
       <button class="modo" data-modo="prova"><kbd>4</kbd><svg class="i"><use href="#i-mano"/></svg>Prova tu<small>ognuno usa l'app</small></button>
+      <button class="modo" data-modo="video"><kbd>5</kbd><svg class="i"><use href="#i-video"/></svg>Video<small>YouTube sincronizzato</small></button>
     </div>
 
     <div class="opzioni">
       <div class="riga" style="margin-top:0">
         <label for="inMsg" style="margin:0;min-width:150px">Messaggio «Occhi a me»</label>
         <input class="campo" id="inMsg" value="Occhi al docente" maxlength="80">
+      </div>
+    </div>
+
+    <div class="opzioni">
+      <h2 style="margin-bottom:8px"><svg class="i"><use href="#i-video"/></svg>Video sincronizzato (YouTube)</h2>
+      <p class="aiuto">Ogni postazione riproduce il video da sé, a piena qualità e con l'audio in cuffia: dalla regia comandi play, pausa e posizione per tutti.</p>
+      <div class="riga" style="margin-top:8px">
+        <input class="campo" id="inYt" placeholder="Incolla il link YouTube (youtube.com/watch?v=…, youtu.be/…, shorts/…)" autocomplete="off">
+        <button class="btn sec" id="btnYt">Carica</button>
+      </div>
+      <div class="yt-box">
+        <div class="yt-schermo"><div id="ytDocente"></div><div class="yt-poster" id="ytPoster">Nessun video caricato</div></div>
+        <div class="yt-comandi">
+          <div class="yt-riga">
+            <button class="btn" id="ytPlay" disabled><svg class="i"><use href="#i-play"/></svg><span>Play per tutti</span></button>
+            <button class="btn sec" id="ytIndietro" disabled title="Indietro 10 secondi"><svg class="i"><use href="#i-indietro"/></svg>10 s</button>
+            <button class="btn sec" id="ytAvanti" disabled title="Avanti 10 secondi">10 s<svg class="i"><use href="#i-avanti"/></svg></button>
+          </div>
+          <div class="yt-riga"><input type="range" id="ytBarra" min="0" max="100" step="0.1" value="0" disabled><span id="ytTempo">0:00 / 0:00</span></div>
+          <label class="aiuto" style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer"><input type="checkbox" id="ytAudioDoc"> Audio anche su questo Mac (proiettore / LIM)</label>
+          <p class="aiuto" id="ytInfo">Il video parte sulle postazioni quando attivi la modalità «Video» (tasto 5).</p>
+        </div>
       </div>
     </div>
 
@@ -219,7 +259,7 @@
     fluido: { res: { width: 1920, height: 1080, frameRate: 24 }, enc: { maxBitrate: 2_500_000, maxFramerate: 24 }, hint: 'motion' },
   };
 
-  const stato = { modo: 'attesa', url: '', titolo: '', msg: 'Occhi al docente' };
+  const stato = { modo: 'attesa', url: '', titolo: '', msg: 'Occhi al docente', vid: '', vplay: '0', vt: '0', vts: '0' };
   let room = null, catalogo = [];
 
   // ---------- utilità ----------
@@ -320,7 +360,8 @@
     if (!collegato()) return;
     try {
       await room.localParticipant.setAttributes({
-        modo: stato.modo, url: stato.url, titolo: stato.titolo, msg: stato.msg
+        modo: stato.modo, url: stato.url, titolo: stato.titolo, msg: stato.msg,
+        vid: stato.vid, vplay: stato.vplay, vt: stato.vt, vts: stato.vts
       });
     } catch (e) { console.warn('[Regia] attributi', e); }
   }
@@ -331,9 +372,96 @@
       $('inCerca').focus();
       return;
     }
+    if (modo === 'video' && !stato.vid){
+      $('ytInfo').innerHTML = '<b style="color:#8A5D05">Incolla prima un link YouTube e premi «Carica».</b>';
+      $('inYt').focus();
+      return;
+    }
+    if (stato.modo === 'video' && modo !== 'video' && ytDoc && stato.vplay === '1') ytComando('pausa', false);
     stato.modo = modo;
     pubblicaStato();
   }
+
+  // ---------- video sincronizzato ----------
+  // Il player del docente è il riferimento: a ogni comando pubblica {vid, vplay, vt, vts};
+  // le postazioni calcolano la posizione attesa e si riallineano da sole.
+  let ytDoc = null, ytPronto = null, ytBattito = null;
+  const ytApi = new Promise(res => {
+    const prima = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { if (prima) prima(); res(); };
+    const sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(sc);
+  });
+  function idYoutube(u){
+    u = (u || '').trim();
+    if (/^[\w-]{11}$/.test(u)) return u;
+    try {
+      const x = new URL(u);
+      if (x.hostname.includes('youtu.be')) return x.pathname.slice(1, 12);
+      if (x.searchParams.get('v')) return x.searchParams.get('v').slice(0, 11);
+      const m = x.pathname.match(/\/(embed|shorts|live|v)\/([\w-]{11})/);
+      if (m) return m[2];
+    } catch {}
+    return '';
+  }
+  const mmss = t => { t = Math.max(0, Math.floor(t || 0)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+
+  async function caricaVideo(link){
+    const id = idYoutube(link);
+    if (!id){ $('ytInfo').innerHTML = '<b style="color:#8A5D05">Link YouTube non riconosciuto.</b>'; return; }
+    $('inYt').value = 'https://youtu.be/' + id;
+    $('ytPoster').style.display = 'flex';
+    $('ytPoster').textContent = '';
+    $('ytPoster').style.backgroundImage = `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)`;
+    await ytApi;
+    if (!ytDoc){
+      ytPronto = new Promise(res => {
+        ytDoc = new YT.Player('ytDocente', {
+          videoId: id, host: 'https://www.youtube.com',
+          playerVars: { controls: 0, disablekb: 1, rel: 0, iv_load_policy: 3, playsinline: 1, fs: 0, modestbranding: 1, enablejsapi: 1, origin: location.origin },
+          events: {
+            onReady: () => { ytAudioDocente(); res(); },
+            onStateChange: e => {
+              if (e.data === YT.PlayerState.PLAYING) $('ytPoster').style.display = 'none';
+              if (e.data === YT.PlayerState.ENDED){ ytComando('pausa'); }
+            }
+          }
+        });
+      });
+    } else {
+      ytDoc.cueVideoById(id);
+    }
+    await ytPronto;
+    stato.vid = id; stato.vplay = '0'; stato.vt = '0'; stato.vts = String(Date.now());
+    ['ytPlay', 'ytIndietro', 'ytAvanti', 'ytBarra'].forEach(k => $(k).disabled = false);
+    $('ytInfo').textContent = 'Video pronto. Premi «Video» (tasto 5) per mostrarlo alle postazioni, poi «Play per tutti».';
+    uiPlay();
+    pubblicaStato();
+  }
+  function ytAudioDocente(){ if (!ytDoc) return; $('ytAudioDoc').checked ? ytDoc.unMute() : ytDoc.mute(); }
+  function uiPlay(){
+    const inCorso = stato.vplay === '1';
+    $('ytPlay').querySelector('use').setAttribute('href', inCorso ? '#i-pausa2' : '#i-play');
+    $('ytPlay').querySelector('span').textContent = inCorso ? 'Pausa per tutti' : 'Play per tutti';
+  }
+  function ytComando(azione, pubblica = true, valore){
+    if (!ytDoc) return;
+    let t = ytDoc.getCurrentTime() || 0;
+    const durata = ytDoc.getDuration() || 0;
+    if (azione === 'play'){ ytDoc.playVideo(); stato.vplay = '1'; }
+    if (azione === 'pausa'){ ytDoc.pauseVideo(); stato.vplay = '0'; }
+    if (azione === 'salta'){ t = Math.min(Math.max(0, valore), durata || valore); ytDoc.seekTo(t, true); }
+    stato.vt = t.toFixed(2); stato.vts = String(Date.now());
+    uiPlay();
+    if (pubblica) pubblicaStato();
+  }
+  // battito: ripubblica la posizione ogni 5 s mentre il video scorre (allinea i ritardatari)
+  setInterval(() => {
+    if (!ytDoc || !ytDoc.getDuration) return;
+    const t = ytDoc.getCurrentTime() || 0, d = ytDoc.getDuration() || 0;
+    if (document.activeElement !== $('ytBarra')){ $('ytBarra').max = d || 100; $('ytBarra').value = t; }
+    $('ytTempo').textContent = mmss(t) + ' / ' + mmss(d);
+  }, 500);
+  setInterval(() => { if (ytDoc && stato.vplay === '1' && stato.modo === 'video') ytComando('battito'); }, 5000);
 
   // ---------- schermo ----------
   // La cattura dello schermo è separata dalla pubblicazione: se la connessione
@@ -453,7 +581,14 @@
       d.className = 'voce' + (a.url === stato.url ? ' sel' : '');
       const b = document.createElement('b'); b.textContent = a.titolo || a.url;
       const s = document.createElement('span'); s.textContent = a.categoria || host(a.url);
-      d.append(b, s);
+      d.append(b);
+      if (a.video){
+        const tv = document.createElement('span'); tv.className = 'tag-video'; tv.title = 'Carica il video introduttivo nel Video sincronizzato';
+        tv.innerHTML = '<svg viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></svg>video';
+        tv.addEventListener('click', ev => { ev.stopPropagation(); caricaVideo(a.video); });
+        d.append(tv);
+      }
+      d.append(s);
       d.addEventListener('click', () => scegliApp(a.url, a.titolo));
       box.appendChild(d);
     });
@@ -486,6 +621,13 @@
   document.querySelectorAll('.modo').forEach(b => b.addEventListener('click', () => impostaModo(b.dataset.modo)));
   $('inMsg').addEventListener('change', () => { stato.msg = $('inMsg').value.trim() || 'Occhi al docente'; if (stato.modo === 'occhi') pubblicaStato(); });
   $('inCerca').addEventListener('input', disegnaLista);
+  $('btnYt').addEventListener('click', () => caricaVideo($('inYt').value));
+  $('inYt').addEventListener('keydown', e => { if (e.key === 'Enter') caricaVideo($('inYt').value); });
+  $('ytPlay').addEventListener('click', () => ytComando(stato.vplay === '1' ? 'pausa' : 'play'));
+  $('ytIndietro').addEventListener('click', () => ytComando('salta', true, (ytDoc.getCurrentTime() || 0) - 10));
+  $('ytAvanti').addEventListener('click', () => ytComando('salta', true, (ytDoc.getCurrentTime() || 0) + 10));
+  $('ytBarra').addEventListener('change', () => { ytComando('salta', true, parseFloat($('ytBarra').value)); $('ytBarra').blur(); });
+  $('ytAudioDoc').addEventListener('change', ytAudioDocente);
   $('inUrl').addEventListener('change', () => { const v = $('inUrl').value.trim(); if (v) scegliApp(v); });
   document.querySelectorAll('[data-copia]').forEach(b => b.addEventListener('click', () => {
     const testo = $(b.dataset.copia).textContent, prima = b.textContent;
@@ -493,7 +635,7 @@
   }));
   document.addEventListener('keydown', e => {
     if (!room || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
-    const m = { '1': 'attesa', '2': 'live', '3': 'occhi', '4': 'prova' }[e.key];
+    const m = { '1': 'attesa', '2': 'live', '3': 'occhi', '4': 'prova', '5': 'video' }[e.key];
     if (m) impostaModo(m);
   });
   window.addEventListener('beforeunload', e => { if (tracciaLocale) { e.preventDefault(); e.returnValue = ''; } });

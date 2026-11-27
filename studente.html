@@ -45,6 +45,14 @@
   .barra .nota{opacity:.8;font-size:13px}
   #frame{width:100%;flex:1;border:0;background:#fff}
 
+  /* Video sincronizzato */
+  #v-video{padding:0;background:#000}
+  #ytBox{position:absolute;inset:0}
+  #ytBox iframe{position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none}
+  #ytPoster,#ytFine{position:absolute;inset:0;background:#000 center/contain no-repeat;display:flex;align-items:center;justify-content:center}
+  #ytFine{background:rgba(11,21,16,.97);display:none;flex-direction:column;gap:14px;font-size:clamp(22px,3vw,40px);font-weight:700}
+  #ytScudo{position:absolute;inset:0}
+
   /* Stato connessione */
   #stato{position:fixed;right:14px;bottom:12px;font-size:12px;padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.45);color:#fff;display:flex;align-items:center;gap:8px;z-index:10;transition:opacity .4s}
   #stato i{width:8px;height:8px;border-radius:50%;background:var(--ambra);display:inline-block}
@@ -82,6 +90,13 @@
 <section id="v-occhi" class="vista">
   <svg class="ico"><use href="#i-occhio"/></svg>
   <h1 id="occhiMsg">Occhi al docente</h1>
+</section>
+
+<section id="v-video" class="vista">
+  <div id="ytBox"><div id="ytPlayer"></div></div>
+  <div id="ytPoster"></div>
+  <div id="ytFine"><svg class="ico"><use href="#i-occhio"/></svg>Occhi al docente</div>
+  <div id="ytScudo"></div>
 </section>
 
 <section id="v-prova" class="vista">
@@ -155,6 +170,11 @@
       $('provaTitolo').textContent = a.titolo ? 'Prova tu · ' + a.titolo : 'Prova tu';
       return mostra('v-prova');
     }
+    if (modo === 'video' && a.vid){
+      sincronizzaVideo(a);
+      return mostra('v-video');
+    }
+    pausaVideo();
     if (modo === 'occhi'){
       $('occhiMsg').textContent = a.msg || 'Occhi al docente';
       return mostra('v-occhi');
@@ -166,6 +186,57 @@
     $('attesaSotto').textContent = 'Resta su questa schermata.';
     mostra('v-attesa');
   }
+
+  // ---------- video sincronizzato ----------
+  let yt = null, ytProntoP = null, ytVid = '', ytPartito = false, ytRif = null;
+  const ytApi = new Promise(res => {
+    window.onYouTubeIframeAPIReady = res;
+    const sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(sc);
+  });
+  function creaPlayer(id){
+    ytProntoP = ytApi.then(() => new Promise(res => {
+      yt = new YT.Player('ytPlayer', {
+        videoId: id, host: 'https://www.youtube.com',
+        playerVars: { controls: 0, disablekb: 1, rel: 0, iv_load_policy: 3, playsinline: 1, fs: 0, modestbranding: 1, enablejsapi: 1, origin: location.origin },
+        events: {
+          onReady: () => { yt.unMute(); yt.setVolume(100); res(); },
+          onStateChange: e => {
+            if (e.data === YT.PlayerState.PLAYING){ ytPartito = true; $('ytPoster').style.display = 'none'; $('ytFine').style.display = 'none'; $('btnAudio').style.display = 'none'; }
+            if (e.data === YT.PlayerState.ENDED) $('ytFine').style.display = 'flex';
+          }
+        }
+      });
+    }));
+    return ytProntoP;
+  }
+  function posizioneAttesa(a){
+    const vt = parseFloat(a.vt) || 0, vts = parseInt(a.vts, 10) || Date.now();
+    return a.vplay === '1' ? vt + (Date.now() - vts) / 1000 : vt;
+  }
+  async function sincronizzaVideo(a){
+    ytRif = a;
+    if (a.vid !== ytVid){
+      ytVid = a.vid; ytPartito = false;
+      $('ytPoster').style.backgroundImage = `url(https://i.ytimg.com/vi/${a.vid}/hqdefault.jpg)`;
+      $('ytPoster').style.display = 'flex'; $('ytFine').style.display = 'none';
+      if (!yt) await creaPlayer(a.vid); else { await ytProntoP; yt.cueVideoById(a.vid); }
+    }
+    await ytProntoP;
+    allineaVideo();
+  }
+  function allineaVideo(){
+    if (!yt || !ytRif || !yt.getPlayerState) return;
+    const a = ytRif, attesa = posizioneAttesa(a), ora = yt.getCurrentTime() || 0, st = yt.getPlayerState();
+    if (Math.abs(ora - attesa) > 1.2) yt.seekTo(attesa, true);
+    if (a.vplay === '1' && st !== YT.PlayerState.PLAYING && st !== YT.PlayerState.BUFFERING && st !== YT.PlayerState.ENDED){
+      yt.playVideo();
+      // se il browser blocca l'avvio con audio, serve un tocco
+      setTimeout(() => { if (yt.getPlayerState() !== YT.PlayerState.PLAYING && ytRif && ytRif.vplay === '1'){ $('btnAudio').textContent = 'Tocca per avviare il video'; $('btnAudio').style.display = 'block'; } }, 2500);
+    }
+    if (a.vplay !== '1' && st === YT.PlayerState.PLAYING) yt.pauseVideo();
+  }
+  function pausaVideo(){ ytRif = null; if (yt && yt.pauseVideo && yt.getPlayerState && yt.getPlayerState() === YT.PlayerState.PLAYING) yt.pauseVideo(); }
+  setInterval(() => { if (ytRif) allineaVideo(); }, 1000);
 
   async function prendiGettone(){
     const r = await fetch('/api/token', {
@@ -257,7 +328,11 @@
   setInterval(segnala, 2000);
 
   $('btnEntra').addEventListener('click', () => { entra(); if (room) room.startAudio().catch(() => {}); });
-  $('btnAudio').addEventListener('click', () => { if (room) room.startAudio().then(aggiornaBtnAudio).catch(() => {}); });
+  $('btnAudio').addEventListener('click', () => {
+    if (room) room.startAudio().then(aggiornaBtnAudio).catch(() => {});
+    if (yt && ytRif){ yt.unMute(); allineaVideo(); yt.playVideo(); }
+    $('btnAudio').style.display = 'none'; $('btnAudio').textContent = "Tocca per attivare l'audio";
+  });
   // ?auto=1 salta il pulsante (niente schermo intero: serve un clic dell'utente)
   if (qs.get('auto') === '1') entra();
   connetti();

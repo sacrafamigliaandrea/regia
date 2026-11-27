@@ -41,6 +41,11 @@ regia/
 
 Chi si collega in ritardo o ricarica la pagina riceve subito la modalità in corso.
 
+## Video sincronizzato (YouTube)
+- Modalità **5 · Video**: incolla un link YouTube nel pannello e premi «Carica». Ogni postazione riproduce il video in locale (qualità piena, audio in cuffia); dalla regia comandi play/pausa, ±10 s e la barra di avanzamento. Le postazioni si riallineano da sole se scartano più di ~1 s.
+- Player senza distrattori: niente controlli YouTube, clic bloccati, copertina propria, copertura a fine video.
+- Nel catalogo, una voce può avere il campo `"video"` (link YouTube del video introduttivo): accanto al titolo compare il tag «video» che lo carica con un clic.
+
 ## Kiosk e spia «fuori»
 - Il pannello docente genera tre comandi ARD: **kiosk** (chiude Chrome e lo riapre a tutto schermo senza barra né schede, Esc non esce), **chiusura** a fine lezione, **scheda normale**.
 - Ogni postazione segnala il proprio stato: **verde** attenta, **ambra lampeggiante** fuori (uscita dallo schermo intero, altra scheda o app in primo piano), **blu** non ha ancora cliccato Entra. Le postazioni «fuori» compaiono per prime nell'elenco.
