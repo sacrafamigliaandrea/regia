@@ -233,7 +233,7 @@
 
   <section class="card full">
     <h2><svg class="i"><use href="#i-terminale"/></svg>Comandi per le 28 postazioni (Apple Remote Desktop)</h2>
-    <p class="aiuto">ARD → seleziona i Mac → <b>Interact › Send UNIX Command</b> → esegui come <b>utente corrente</b>.</p>
+    <p class="aiuto">ARD → seleziona i Mac → <b>Interact › Send UNIX Command</b> → va bene sia «utente corrente» sia «root»: il comando si apre comunque nella sessione dello studente.</p>
 
     <p class="aiuto cmd-tit">Avvia in modalità kiosk (consigliato)</p>
     <p class="aiuto">Chiude Chrome e lo riapre senza barra degli indirizzi né schede: Esc non fa uscire. Le schede aperte dagli studenti vengono chiuse.</p>
@@ -638,9 +638,12 @@
   function aggiornaComandoArd(stanza){
     const base = location.origin + location.pathname.replace(/docente\.html$/, '') + 'studente.html';
     const url = `${base}?stanza=${encodeURIComponent(stanza)}&pc=$(scutil --get ComputerName | tr ' ' '-')`;
-    $('cmdArd').textContent = `open -a "Google Chrome" "${url}"`;
-    $('cmdKiosk').textContent = `osascript -e 'quit app "Google Chrome"'; sleep 3; open -na "Google Chrome" --args --kiosk --no-first-run --autoplay-policy=no-user-gesture-required "${url}&auto=1"`;
-    $('cmdChiudi').textContent = `osascript -e 'quit app "Google Chrome"'`;
+    // Funziona sia se ARD esegue come root sia come utente: da root il comando
+    // viene lanciato dentro la sessione grafica di chi è collegato al Mac.
+    const C = `U=$(stat -f%Su /dev/console); C(){ if [ "$(id -u)" = 0 ]; then launchctl asuser "$(id -u "$U")" sudo -u "$U" "$@"; else "$@"; fi; };`;
+    $('cmdArd').textContent = `${C} C open -a "Google Chrome" "${url}"`;
+    $('cmdKiosk').textContent = `${C} C osascript -e 'quit app "Google Chrome"'; sleep 3; C open -na "Google Chrome" --args --kiosk --no-first-run --autoplay-policy=no-user-gesture-required "${url}&auto=1"`;
+    $('cmdChiudi').textContent = `${C} C osascript -e 'quit app "Google Chrome"'`;
   }
 
   // ---------- eventi ----------
