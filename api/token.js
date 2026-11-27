@@ -6,7 +6,7 @@
 // Variabili d'ambiente su Vercel:
 //   LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET   progetto LiveKit
 //   REGIA_PIN                                          PIN del docente (min 4 caratteri)
-//   FIREBASE_CONFIG                                    configurazione web di Firebase (JSON, non segreta)
+//   FIREBASE_CONFIG                                    (facoltativa) sostituisce la configurazione web qui sotto
 //   FIREBASE_SERVICE_ACCOUNT                           chiave dell'account di servizio (JSON, SEGRETA)
 //
 // Richieste (POST JSON):
@@ -30,8 +30,20 @@ function pinValido(inviato) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+// Configurazione web del progetto Firebase «regia-lab» (pubblica per natura: sta nelle pagine web;
+// la sicurezza è nelle regole del database). FIREBASE_CONFIG su Vercel, se presente, la sostituisce.
+const CONFIG_FIREBASE = {
+  apiKey: 'AIzaSyC9bJZqra02q5Q9Gl5fqyNuugAEhqJW1YI',
+  authDomain: 'regia-lab.firebaseapp.com',
+  databaseURL: 'https://regia-lab-default-rtdb.europe-west1.firebasedatabase.app',
+  projectId: 'regia-lab',
+  storageBucket: 'regia-lab.firebasestorage.app',
+  messagingSenderId: '801491846051',
+  appId: '1:801491846051:web:a2b4630a8f294f6e481016',
+};
+
 function configFirebase() {
-  try { return JSON.parse(env('FIREBASE_CONFIG')); } catch { return null; }
+  try { return env('FIREBASE_CONFIG') ? JSON.parse(env('FIREBASE_CONFIG')) : CONFIG_FIREBASE; } catch { return CONFIG_FIREBASE; }
 }
 
 function appFirebase() {
@@ -68,7 +80,7 @@ export default async function handler(req, res) {
   const docente = ruolo === 'docente';
 
   const firebase = configFirebase();
-  if (!firebase) return res.status(500).json({ errore: 'Server non configurato: manca FIREBASE_CONFIG' });
+  
 
   try {
     if (!docente) {
