@@ -14,9 +14,7 @@
 //   { ruolo:'studente', stanza, nome, livekit:true }   → { token, url, stanza }   (solo durante lo schermo)
 //   { ruolo:'docente',  stanza, pin }                  → { firebase, fbToken, token, url, stanza }
 import { AccessToken, TrackSource } from 'livekit-server-sdk';
-import { timingSafeEqual, randomBytes } from 'node:crypto';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
+import { timingSafeEqual, randomBytes, createSign } from 'node:crypto';
 
 const env = k => (process.env[k] || '').trim();
 const pulisci = (s, max = 40) =>
@@ -46,10 +44,19 @@ function configFirebase() {
   try { return env('FIREBASE_CONFIG') ? JSON.parse(env('FIREBASE_CONFIG')) : CONFIG_FIREBASE; } catch { return CONFIG_FIREBASE; }
 }
 
-function appFirebase() {
-  if (getApps().length) return getApps()[0];
+// Gettone personalizzato Firebase (JWT RS256 firmato con la chiave dell'account di servizio).
+// Equivale a admin.auth().createCustomToken(), senza dipendere da firebase-admin.
+function gettoneFirebase(uid, claims) {
   const sa = JSON.parse(env('FIREBASE_SERVICE_ACCOUNT'));
-  return initializeApp({ credential: cert(sa) });
+  const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const ora = Math.floor(Date.now() / 1000);
+  const corpo = b64({ alg: 'RS256', typ: 'JWT' }) + '.' + b64({
+    iss: sa.client_email, sub: sa.client_email,
+    aud: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
+    iat: ora, exp: ora + 3600, uid, claims,
+  });
+  const firma = createSign('RSA-SHA256').update(corpo).sign(sa.private_key).toString('base64url');
+  return corpo + '.' + firma;
 }
 
 async function gettoneLiveKit(room, docente, nome) {
@@ -92,7 +99,7 @@ export default async function handler(req, res) {
       await new Promise(r => setTimeout(r, 800)); // rallenta i tentativi a vuoto
       return res.status(401).json({ errore: 'PIN non valido' });
     }
-    const fbToken = await getAuth(appFirebase()).createCustomToken('docente-' + room, { docente: true, stanza: room });
+    const fbToken = gettoneFirebase('docente-' + room, { docente: true, stanza: room });
     return res.status(200).json({
       firebase, fbToken, stanza: room,
       token: await gettoneLiveKit(room, true), url: env('LIVEKIT_URL'),
