@@ -41,6 +41,11 @@ regia/
 
 Chi si collega in ritardo o ricarica la pagina riceve subito la modalità in corso.
 
+## Kiosk e spia «fuori»
+- Il pannello docente genera tre comandi ARD: **kiosk** (chiude Chrome e lo riapre a tutto schermo senza barra né schede, Esc non esce), **chiusura** a fine lezione, **scheda normale**.
+- Ogni postazione segnala il proprio stato: **verde** attenta, **ambra lampeggiante** fuori (uscita dallo schermo intero, altra scheda o app in primo piano), **blu** non ha ancora cliccato Entra. Le postazioni «fuori» compaiono per prime nell'elenco.
+- Da kiosk si esce solo con ⌘Q: se una postazione diventa ambra o sparisce dall'elenco, rilancia il comando kiosk solo su quel Mac.
+
 ## Parametri della pagina studente
 - `?stanza=lab` stanza (default `lab`): stanze diverse = classi o docenti diversi in parallelo
 - `?pc=iMac-12` nome della postazione

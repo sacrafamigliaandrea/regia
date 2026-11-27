@@ -56,7 +56,8 @@ export default async function handler(req, res) {
     canSubscribe: true,
     canPublish: docente,          // gli studenti ricevono soltanto
     canPublishData: docente,
-    canUpdateOwnMetadata: docente, // lo stato della regia viaggia negli attributi del docente
+    // docente: pubblica lo stato della regia; studente: pubblica solo la propria «spia» (attento/fuori)
+    canUpdateOwnMetadata: true,
     ...(docente ? { canPublishSources: [TrackSource.SCREEN_SHARE] } : {}),
   });
 

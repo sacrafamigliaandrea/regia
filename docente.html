@@ -77,7 +77,15 @@
 
   /* Postazioni */
   #postazioni{display:flex;flex-wrap:wrap;gap:6px;max-height:250px;overflow:auto}
-  .pc{font-size:12px;padding:5px 10px;border-radius:999px;background:var(--verde-chiaro);color:var(--verde-scuro)}
+  .pc{font-size:12px;padding:5px 10px;border-radius:999px;background:var(--verde-chiaro);color:var(--verde-scuro);display:inline-flex;align-items:center;gap:6px}
+  .pc i{width:7px;height:7px;border-radius:50%;background:var(--verde);display:inline-block}
+  .pc.fuori{background:var(--ambra-chiaro);color:#8A5D05;font-weight:700;box-shadow:inset 0 0 0 1.5px var(--ambra)}
+  .pc.fuori i{background:var(--ambra);animation:lamp 1s infinite}
+  .pc.entra{background:var(--blu-chiaro);color:var(--blu)}
+  .pc.entra i{background:var(--blu)}
+  .riepilogo{display:flex;gap:14px;margin-top:8px;font-size:13px;color:var(--grigio)}
+  .riepilogo b.f{color:#8A5D05} .riepilogo b.e{color:var(--blu)} .riepilogo b.o{color:var(--verde)}
+  .cmd-tit{font-weight:600;color:var(--inchiostro);margin-top:14px}
   .conta{font-size:42px;font-weight:700;color:var(--verde);line-height:1}
   .conta small{font-size:15px;color:var(--grigio);font-weight:400}
   .vuoto{color:var(--grigio);font-size:14px}
@@ -146,6 +154,7 @@
   <section class="card">
     <h2><svg class="i"><use href="#i-utenti"/></svg>Postazioni collegate</h2>
     <div class="conta" id="conta">0 <small>postazioni</small></div>
+    <div class="riepilogo" id="riepilogo"></div>
     <div id="postazioni" style="margin-top:14px"><span class="vuoto">Nessuna postazione collegata</span></div>
   </section>
 
@@ -177,10 +186,21 @@
   </section>
 
   <section class="card full">
-    <h2><svg class="i"><use href="#i-terminale"/></svg>Apri la regia sulle 28 postazioni (Apple Remote Desktop)</h2>
-    <p class="aiuto">ARD → seleziona i Mac → <b>Interact › Send UNIX Command</b> → esegui come <b>utente corrente</b>:</p>
+    <h2><svg class="i"><use href="#i-terminale"/></svg>Comandi per le 28 postazioni (Apple Remote Desktop)</h2>
+    <p class="aiuto">ARD → seleziona i Mac → <b>Interact › Send UNIX Command</b> → esegui come <b>utente corrente</b>.</p>
+
+    <p class="aiuto cmd-tit">Avvia in modalità kiosk (consigliato)</p>
+    <p class="aiuto">Chiude Chrome e lo riapre senza barra degli indirizzi né schede: Esc non fa uscire. Le schede aperte dagli studenti vengono chiuse.</p>
+    <p class="aiuto"><code id="cmdKiosk"></code></p>
+    <div class="riga"><button class="btn" data-copia="cmdKiosk">Copia comando kiosk</button></div>
+
+    <p class="aiuto cmd-tit">Chiudi la Regia (fine lezione)</p>
+    <p class="aiuto"><code id="cmdChiudi"></code></p>
+    <div class="riga"><button class="btn sec" data-copia="cmdChiudi">Copia comando di chiusura</button></div>
+
+    <p class="aiuto cmd-tit">Apri in una scheda normale (senza kiosk)</p>
     <p class="aiuto"><code id="cmdArd"></code></p>
-    <div class="riga"><button class="btn sec" id="btnCopia">Copia comando</button></div>
+    <div class="riga"><button class="btn sec" data-copia="cmdArd">Copia comando</button></div>
   </section>
 </main>
 
@@ -236,6 +256,7 @@
     room
       .on(RoomEvent.ParticipantConnected, aggiornaPostazioni)
       .on(RoomEvent.ParticipantDisconnected, aggiornaPostazioni)
+      .on(RoomEvent.ParticipantAttributesChanged, (changed, p) => { if (p !== room.localParticipant) aggiornaPostazioni(); })
       .on(RoomEvent.LocalTrackUnpublished, pub => { if (pub.source === Track.Source.ScreenShare) uiSchermo(false); })
       .on(RoomEvent.Reconnecting, () => pill('Riconnessione…', false))
       .on(RoomEvent.Reconnected, () => { pill('In regia · ' + stanza, true); pubblicaStato(); })
@@ -303,12 +324,24 @@
   // ---------- postazioni ----------
   function aggiornaPostazioni(){
     if (!room) return;
-    const nomi = [...room.remoteParticipants.values()].map(p => p.name || p.identity).sort((a, b) => a.localeCompare(b, 'it', { numeric: true }));
-    $('conta').innerHTML = nomi.length + ' <small>' + (nomi.length === 1 ? 'postazione' : 'postazioni') + '</small>';
+    const ordine = { fuori: 0, entra: 1, ok: 2 };
+    const pcs = [...room.remoteParticipants.values()]
+      .map(p => ({ nome: p.name || p.identity, spia: (p.attributes && p.attributes.spia) || 'entra' }))
+      .sort((a, b) => (ordine[a.spia] - ordine[b.spia]) || a.nome.localeCompare(b.nome, 'it', { numeric: true }));
+    $('conta').innerHTML = pcs.length + ' <small>' + (pcs.length === 1 ? 'postazione' : 'postazioni') + '</small>';
+    const n = k => pcs.filter(p => p.spia === k).length;
+    $('riepilogo').innerHTML = pcs.length ? `<span><b class="o">${n('ok')}</b> attente</span><span><b class="f">${n('fuori')}</b> fuori</span><span><b class="e">${n('entra')}</b> da entrare</span>` : '';
     const box = $('postazioni');
     box.innerHTML = '';
-    if (!nomi.length){ box.innerHTML = '<span class="vuoto">Nessuna postazione collegata</span>'; return; }
-    nomi.forEach(n => { const s = document.createElement('span'); s.className = 'pc'; s.textContent = n; box.appendChild(s); });
+    if (!pcs.length){ box.innerHTML = '<span class="vuoto">Nessuna postazione collegata</span>'; return; }
+    const etichetta = { ok: 'attenta', fuori: 'fuori dalla Regia', entra: 'non ha cliccato Entra' };
+    pcs.forEach(p => {
+      const s = document.createElement('span');
+      s.className = 'pc' + (p.spia === 'ok' ? '' : ' ' + p.spia);
+      s.title = etichetta[p.spia] || '';
+      s.append(document.createElement('i'), document.createTextNode(p.nome));
+      box.appendChild(s);
+    });
   }
 
   // ---------- catalogo ----------
@@ -350,8 +383,10 @@
   // ---------- comando ARD ----------
   function aggiornaComandoArd(stanza){
     const base = location.origin + location.pathname.replace(/docente\.html$/, '') + 'studente.html';
-    const cmd = `open -a "Google Chrome" "${base}?stanza=${encodeURIComponent(stanza)}&pc=$(scutil --get ComputerName | tr ' ' '-')"`;
-    $('cmdArd').textContent = cmd;
+    const url = `${base}?stanza=${encodeURIComponent(stanza)}&pc=$(scutil --get ComputerName | tr ' ' '-')`;
+    $('cmdArd').textContent = `open -a "Google Chrome" "${url}"`;
+    $('cmdKiosk').textContent = `osascript -e 'quit app "Google Chrome"'; sleep 3; open -na "Google Chrome" --args --kiosk --no-first-run "${url}&auto=1"`;
+    $('cmdChiudi').textContent = `osascript -e 'quit app "Google Chrome"'`;
   }
 
   // ---------- eventi ----------
@@ -363,9 +398,10 @@
   $('inMsg').addEventListener('change', () => { stato.msg = $('inMsg').value.trim() || 'Occhi al docente'; if (stato.modo === 'occhi') pubblicaStato(); });
   $('inCerca').addEventListener('input', disegnaLista);
   $('inUrl').addEventListener('change', () => { const v = $('inUrl').value.trim(); if (v) scegliApp(v); });
-  $('btnCopia').addEventListener('click', () => {
-    navigator.clipboard.writeText($('cmdArd').textContent).then(() => { $('btnCopia').textContent = 'Copiato'; setTimeout(() => $('btnCopia').textContent = 'Copia comando', 1500); });
-  });
+  document.querySelectorAll('[data-copia]').forEach(b => b.addEventListener('click', () => {
+    const testo = $(b.dataset.copia).textContent, prima = b.textContent;
+    navigator.clipboard.writeText(testo).then(() => { b.textContent = 'Copiato'; setTimeout(() => b.textContent = prima, 1500); });
+  }));
   document.addEventListener('keydown', e => {
     if (!room || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
     const m = { '1': 'attesa', '2': 'live', '3': 'occhi', '4': 'prova' }[e.key];

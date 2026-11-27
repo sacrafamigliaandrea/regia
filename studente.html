@@ -185,7 +185,7 @@
         .on(RoomEvent.ParticipantConnected, applica)
         .on(RoomEvent.ParticipantDisconnected, p => { if (p.identity === 'docente'){ tracciaSchermo = null; } applica(); })
         .on(RoomEvent.Reconnecting, () => stato('Riconnessione…', false))
-        .on(RoomEvent.Reconnected, () => stato('Collegato', true))
+        .on(RoomEvent.Reconnected, () => { stato('Collegato', true); segnala(true); })
         .on(RoomEvent.Disconnected, () => {
           stato('Disconnesso: riprovo…', false);
           tracciaSchermo = null; room = null; applica();
@@ -195,6 +195,7 @@
       await room.connect(url, token, { autoSubscribe: true });
       tentativi = 0;
       stato('Collegato · ' + NOME, true);
+      ultimaSpia = ''; segnala(true);
       applica();
     } catch (e) {
       console.warn('[Regia]', e);
@@ -211,7 +212,34 @@
     const el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
     applica();
+    segnala();
   }
+
+  // ---------- spia per il docente ----------
+  // ok = pagina visibile, in primo piano e a tutto schermo (o in kiosk)
+  // fuori = uscito dallo schermo intero, altra scheda/app in primo piano
+  // entra = non ha ancora cliccato «Entra»
+  let ultimaSpia = '';
+  function schermoPieno(){
+    if (document.fullscreenElement) return true;
+    return Math.abs(window.innerHeight - screen.height) < 6 && Math.abs(window.innerWidth - screen.width) < 6; // kiosk
+  }
+  function spia(){
+    if (!entrato) return 'entra';
+    return (document.visibilityState === 'visible' && document.hasFocus() && schermoPieno()) ? 'ok' : 'fuori';
+  }
+  async function segnala(forza){
+    if (!room || room.state !== 'connected') return;
+    const s = spia();
+    if (s === ultimaSpia && !forza) return;
+    ultimaSpia = s;
+    try { await room.localParticipant.setAttributes({ spia: s }); } catch (e) { ultimaSpia = ''; }
+  }
+  ['visibilitychange', 'fullscreenchange', 'resize'].forEach(ev => document.addEventListener(ev, () => segnala()));
+  window.addEventListener('resize', () => segnala());
+  window.addEventListener('focus', () => segnala());
+  window.addEventListener('blur', () => setTimeout(segnala, 300)); // il focus nell'iframe di «Prova tu» non conta come uscita
+  setInterval(segnala, 2000);
 
   $('btnEntra').addEventListener('click', entra);
   // ?auto=1 salta il pulsante (niente schermo intero: serve un clic dell'utente)
