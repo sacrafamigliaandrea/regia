@@ -11,7 +11,7 @@ const pulisci = (s, max = 40) =>
   String(s || '').toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').slice(0, max);
 
 function pinValido(inviato) {
-  const atteso = process.env.REGIA_PIN || '';
+  const atteso = (process.env.REGIA_PIN || '').trim();
   if (atteso.length < 4) return false;
   const a = Buffer.from(String(inviato || ''));
   const b = Buffer.from(atteso);
@@ -22,7 +22,10 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ errore: 'Metodo non consentito' });
 
-  const { LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET } = process.env;
+  // trim(): un valore incollato con spazi o a capo produce un gettone "invalid token"
+  const LIVEKIT_URL = (process.env.LIVEKIT_URL || '').trim();
+  const LIVEKIT_API_KEY = (process.env.LIVEKIT_API_KEY || '').trim();
+  const LIVEKIT_API_SECRET = (process.env.LIVEKIT_API_SECRET || '').trim();
   if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
     return res.status(500).json({ errore: 'Server non configurato: mancano le variabili LiveKit' });
   }
