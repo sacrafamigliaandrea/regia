@@ -88,6 +88,13 @@
   <audio id="audio" autoplay></audio>
 </section>
 
+<section id="v-fine" class="vista" style="background:var(--verde-scuro)">
+  <svg class="ico"><use href="#i-schermo"/></svg>
+  <h1>Lezione terminata</h1>
+  <p class="sotto">Grazie! Puoi chiudere questa finestra.</p>
+  <button class="btn-entra" id="btnRientra" style="font-size:18px;padding:14px 34px">Rientra</button>
+</section>
+
 <section id="v-occhi" class="vista">
   <svg class="ico"><use href="#i-occhio"/></svg>
   <h1 id="occhiMsg">Occhi al docente</h1>
@@ -166,6 +173,7 @@
     }
     const a = d.attributes || {};
     const modo = a.modo || 'attesa';
+    if (modo === 'fine') return terminaLezione();
 
     if (modo === 'prova' && a.url){
       if (frame.dataset.url !== a.url){ frame.src = a.url; frame.dataset.url = a.url; }
@@ -275,8 +283,10 @@
         .on(RoomEvent.Reconnecting, () => stato('Riconnessione…', false))
         .on(RoomEvent.Reconnected, () => { stato('Collegato', true); segnala(true); })
         .on(RoomEvent.Disconnected, () => {
+          tracciaSchermo = null; tracciaAudio = null; room = null;
+          if (finita){ stato('Lezione terminata', false); return; }
           stato('Disconnesso: riprovo…', false);
-          tracciaSchermo = null; room = null; applica();
+          applica();
           setTimeout(connetti, 3000);
         });
 
@@ -294,11 +304,45 @@
     }
   }
 
+  // ---------- fine lezione ----------
+  // Il docente preme «Termina lezione»: la postazione si scollega (niente minuti consumati),
+  // mostra la schermata finale e prova a chiudere la finestra.
+  let finita = false;
+  function terminaLezione(){
+    if (finita) return;
+    finita = true;
+    pausaVideo();
+    frame.src = 'about:blank'; frame.dataset.url = '';
+    mostra('v-fine');
+    rilasciaVeglia();
+    const r = room; room = null;
+    if (r) r.disconnect().catch(() => {});
+    stato('Lezione terminata', false);
+    setTimeout(() => { try { window.close(); } catch {} }, 4000); // riesce se Chrome è stato aperto da ARD
+  }
+  $('btnRientra').addEventListener('click', () => { finita = false; mostra('v-attesa'); richiediVeglia(); connetti(); });
+
+  // ---------- niente salvaschermo ----------
+  // Screen Wake Lock: finché la pagina è visibile il Mac non avvia salvaschermo né stop dello schermo.
+  let veglia = null;
+  async function richiediVeglia(){
+    if (finita || !('wakeLock' in navigator) || document.visibilityState !== 'visible' || veglia) return;
+    try {
+      veglia = await navigator.wakeLock.request('screen');
+      veglia.addEventListener('release', () => { veglia = null; });
+    } catch (e) { veglia = null; }
+  }
+  function rilasciaVeglia(){ if (veglia){ veglia.release().catch(() => {}); veglia = null; } }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') richiediVeglia(); });
+  setInterval(richiediVeglia, 30000);
+  richiediVeglia();
+
   function entra(){
     if (entrato) return;
     entrato = true;
     const el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    richiediVeglia();
     applica();
     segnala();
   }

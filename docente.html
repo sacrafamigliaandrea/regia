@@ -186,6 +186,10 @@
       <button class="modo" data-modo="prova"><kbd>4</kbd><svg class="i"><use href="#i-mano"/></svg>Prova tu<small>ognuno usa l'app</small></button>
       <button class="modo" data-modo="video"><kbd>5</kbd><svg class="i"><use href="#i-video"/></svg>Video<small>YouTube sincronizzato</small></button>
     </div>
+    <div class="riga" style="justify-content:flex-end">
+      <span class="aiuto" style="margin-right:auto">«Termina lezione» scollega tutte le postazioni (non consumano più minuti) e mostra «Lezione terminata».</span>
+      <button class="btn amb" id="btnTermina"><svg class="i"><use href="#i-stop"/></svg>Termina lezione</button>
+    </div>
 
     <div class="opzioni">
       <div class="riga" style="margin-top:0">
@@ -271,6 +275,7 @@
   $('inStanza').value = leggi('regia_stanza') || 'lab';
 
   // ---------- accesso ----------
+  let confermaTermina = false;
   let cred = null;            // { stanza, pin } solo in memoria, per ricollegarsi da soli
   let riconnessione = null;   // promessa in corso, per non aprirne due insieme
   let manuale = false;        // true quando la disconnessione è voluta
@@ -621,6 +626,27 @@
   document.querySelectorAll('.modo').forEach(b => b.addEventListener('click', () => impostaModo(b.dataset.modo)));
   $('inMsg').addEventListener('change', () => { stato.msg = $('inMsg').value.trim() || 'Occhi al docente'; if (stato.modo === 'occhi') pubblicaStato(); });
   $('inCerca').addEventListener('input', disegnaLista);
+  $('btnTermina').addEventListener('click', async () => {
+    if (!confermaTermina){ confermaTermina = true; $('btnTermina').lastChild.textContent = 'Conferma: termina'; setTimeout(() => { confermaTermina = false; $('btnTermina').lastChild.textContent = 'Termina lezione'; }, 4000); return; }
+    confermaTermina = false;
+    if (tracciaLocale) await interrompi();
+    if (ytDoc && stato.vplay === '1') ytComando('pausa', false);
+    stato.modo = 'fine';
+    await pubblicaStato();
+    $('btnTermina').lastChild.textContent = 'Lezione terminata';
+    // dopo qualche secondo il docente si scollega a sua volta; per ripartire basta un nuovo «Collega»
+    setTimeout(async () => {
+      manuale = true;
+      const r = room; room = null;
+      if (r) await r.disconnect().catch(() => {});
+      manuale = false;
+      stato.modo = 'attesa';
+      $('btnTermina').lastChild.textContent = 'Termina lezione';
+      $('regia').classList.add('nascosto'); $('login').classList.remove('nascosto');
+      avviso('Lezione terminata: tutte le postazioni sono state scollegate.');
+      pill('Non collegato', false);
+    }, 6000);
+  });
   $('btnYt').addEventListener('click', () => caricaVideo($('inYt').value));
   $('inYt').addEventListener('keydown', e => { if (e.key === 'Enter') caricaVideo($('inYt').value); });
   $('ytPlay').addEventListener('click', () => ytComando(stato.vplay === '1' ? 'pausa' : 'play'));
