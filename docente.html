@@ -145,6 +145,7 @@
         <option value="nitido">Testo nitido · 10 fps (pagine, app, documenti)</option>
         <option value="fluido">Fluido · 24 fps (animazioni, giochi, video)</option>
       </select>
+      <label class="aiuto" style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer"><input type="checkbox" id="chkAudio" checked> Audio della scheda</label>
       <button class="btn" id="btnCondividi"><svg class="i"><use href="#i-cast"/></svg>Condividi una scheda</button>
       <button class="btn sec nascosto" id="btnStop"><svg class="i"><use href="#i-stop"/></svg>Interrompi</button>
     </div>
@@ -337,27 +338,38 @@
   // ---------- schermo ----------
   // La cattura dello schermo è separata dalla pubblicazione: se la connessione
   // cade, si ripubblica la stessa traccia senza richiedere di nuovo la scheda.
-  let tracciaLocale = null, qualitaAttiva = null;
+  let tracciaLocale = null, tracciaAudio = null, qualitaAttiva = null;
 
   function msgSchermo(txt){ const m = $('msgSchermo'); m.textContent = txt || ''; m.classList.toggle('on', !!txt); }
 
   async function pubblicaTraccia(){
-    const pubb = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
-    if (pubb && pubb.track === tracciaLocale) return;
-    await room.localParticipant.publishTrack(tracciaLocale, {
-      source: Track.Source.ScreenShare, simulcast: false, videoEncoding: qualitaAttiva.enc
-    });
+    const lp = room.localParticipant;
+    const pv = lp.getTrackPublication(Track.Source.ScreenShare);
+    if (!(pv && pv.track === tracciaLocale)){
+      await lp.publishTrack(tracciaLocale, { source: Track.Source.ScreenShare, simulcast: false, videoEncoding: qualitaAttiva.enc });
+    }
+    if (tracciaAudio){
+      const pa = lp.getTrackPublication(Track.Source.ScreenShareAudio);
+      if (!(pa && pa.track === tracciaAudio)){
+        await lp.publishTrack(tracciaAudio, { source: Track.Source.ScreenShareAudio, dtx: false, red: false, audioPreset: { maxBitrate: 96000 } });
+      }
+    }
   }
 
   async function condividi(){
     msgSchermo('');
     const q = QUALITA[$('selQualita').value];
     try {
-      const [t] = await LivekitClient.createLocalScreenTracks({
-        audio: false, resolution: q.res, contentHint: q.hint,
+      const conAudio = $('chkAudio').checked;
+      const tracce = await LivekitClient.createLocalScreenTracks({
+        audio: conAudio ? { autoGainControl: false, echoCancellation: false, noiseSuppression: false } : false,
+        systemAudio: 'exclude', resolution: q.res, contentHint: q.hint,
         selfBrowserSurface: 'exclude', surfaceSwitching: 'include'
       });
+      const t = tracce.find(x => x.kind === 'video');
+      tracciaAudio = tracce.find(x => x.kind === 'audio') || null;
       tracciaLocale = t; qualitaAttiva = q;
+      if (conAudio && !tracciaAudio) msgSchermo('Trasmissione senza audio: nella finestra di Chrome scegli una «Scheda» e lascia attivo «Condividi anche l\'audio della scheda». Finestre e schermo intero non trasmettono audio.');
       t.mediaStreamTrack.addEventListener('ended', () => interrompi()); // «Interrompi condivisione» di Chrome
       t.attach($('vidAnteprima'));
       uiSchermo(true);
@@ -380,8 +392,9 @@
   }
 
   async function interrompi(){
-    const t = tracciaLocale; tracciaLocale = null;
-    if (t){
+    const tracce = [tracciaLocale, tracciaAudio].filter(Boolean);
+    tracciaLocale = null; tracciaAudio = null;
+    for (const t of tracce){
       if (collegato()) await room.localParticipant.unpublishTrack(t).catch(() => {});
       t.stop();
     }
@@ -394,6 +407,7 @@
     $('btnCondividi').classList.toggle('nascosto', attivo);
     $('btnStop').classList.toggle('nascosto', !attivo);
     $('selQualita').disabled = attivo;
+    $('chkAudio').disabled = attivo;
   }
 
   // ---------- postazioni ----------
@@ -460,7 +474,7 @@
     const base = location.origin + location.pathname.replace(/docente\.html$/, '') + 'studente.html';
     const url = `${base}?stanza=${encodeURIComponent(stanza)}&pc=$(scutil --get ComputerName | tr ' ' '-')`;
     $('cmdArd').textContent = `open -a "Google Chrome" "${url}"`;
-    $('cmdKiosk').textContent = `osascript -e 'quit app "Google Chrome"'; sleep 3; open -na "Google Chrome" --args --kiosk --no-first-run "${url}&auto=1"`;
+    $('cmdKiosk').textContent = `osascript -e 'quit app "Google Chrome"'; sleep 3; open -na "Google Chrome" --args --kiosk --no-first-run --autoplay-policy=no-user-gesture-required "${url}&auto=1"`;
     $('cmdChiudi').textContent = `osascript -e 'quit app "Google Chrome"'`;
   }
 

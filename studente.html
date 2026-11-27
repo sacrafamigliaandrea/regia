@@ -106,8 +106,8 @@
   scrivi('regia_pc', NOME);
 
   const $ = id => document.getElementById(id);
-  const video = $('video'), frame = $('frame');
-  let room = null, tracciaSchermo = null, entrato = false, tentativi = 0;
+  const video = $('video'), frame = $('frame'), audio = $('audio');
+  let room = null, tracciaSchermo = null, tracciaAudio = null, entrato = false, tentativi = 0;
 
   $('lblPostazione').textContent = NOME + ' · stanza ' + STANZA;
 
@@ -128,8 +128,18 @@
     return null;
   }
 
+  // L'audio della lezione si sente solo in «Guardate me»: in «Prova tu» l'app ha il suo audio
+  function aggiornaAudio(modo){ audio.muted = modo !== 'live'; }
+  function aggiornaBtnAudio(){
+    const serve = entrato && room && !room.canPlaybackAudio;
+    $('btnAudio').style.display = serve ? 'block' : 'none';
+  }
+
   // Unica funzione che decide cosa vede lo studente
   function applica(){
+    const dd = docente();
+    aggiornaAudio(dd ? (dd.attributes || {}).modo : '');
+    aggiornaBtnAudio();
     if (!entrato) return;
     const d = docente();
     if (!d){
@@ -177,13 +187,18 @@
           if (p.identity === 'docente' && track.source === Track.Source.ScreenShare){
             tracciaSchermo = track; track.attach(video); applica();
           }
+          if (p.identity === 'docente' && track.source === Track.Source.ScreenShareAudio){
+            tracciaAudio = track; track.attach(audio); applica();
+          }
         })
         .on(RoomEvent.TrackUnsubscribed, (track, pub, p) => {
           if (track === tracciaSchermo){ track.detach(video); tracciaSchermo = null; applica(); }
+          if (track === tracciaAudio){ track.detach(audio); tracciaAudio = null; }
         })
         .on(RoomEvent.ParticipantAttributesChanged, applica)
+        .on(RoomEvent.AudioPlaybackStatusChanged, aggiornaBtnAudio)
         .on(RoomEvent.ParticipantConnected, applica)
-        .on(RoomEvent.ParticipantDisconnected, p => { if (p.identity === 'docente'){ tracciaSchermo = null; } applica(); })
+        .on(RoomEvent.ParticipantDisconnected, p => { if (p.identity === 'docente'){ tracciaSchermo = null; tracciaAudio = null; } applica(); })
         .on(RoomEvent.Reconnecting, () => stato('Riconnessione…', false))
         .on(RoomEvent.Reconnected, () => { stato('Collegato', true); segnala(true); })
         .on(RoomEvent.Disconnected, () => {
@@ -241,7 +256,8 @@
   window.addEventListener('blur', () => setTimeout(segnala, 300)); // il focus nell'iframe di «Prova tu» non conta come uscita
   setInterval(segnala, 2000);
 
-  $('btnEntra').addEventListener('click', entra);
+  $('btnEntra').addEventListener('click', () => { entra(); if (room) room.startAudio().catch(() => {}); });
+  $('btnAudio').addEventListener('click', () => { if (room) room.startAudio().then(aggiornaBtnAudio).catch(() => {}); });
   // ?auto=1 salta il pulsante (niente schermo intero: serve un clic dell'utente)
   if (qs.get('auto') === '1') entra();
   connetti();

@@ -58,7 +58,7 @@ export default async function handler(req, res) {
     canPublishData: docente,
     // docente: pubblica lo stato della regia; studente: pubblica solo la propria «spia» (attento/fuori)
     canUpdateOwnMetadata: true,
-    ...(docente ? { canPublishSources: [TrackSource.SCREEN_SHARE] } : {}),
+    ...(docente ? { canPublishSources: [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO] } : {}),
   });
 
   return res.status(200).json({ token: await at.toJwt(), url: LIVEKIT_URL, stanza: room });
