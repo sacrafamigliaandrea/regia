@@ -71,6 +71,16 @@
   .modo{border:2px solid var(--bordo);background:#fff;border-radius:12px;padding:16px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--inchiostro);font-weight:600;transition:all .15s;position:relative}
   .modo svg.i{width:30px;height:30px}
   .modo small{font-weight:400;color:var(--grigio);font-size:12px}
+  .costo{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;padding:2px 8px;margin-top:2px}
+  .costo.gratis{background:var(--verde-chiaro);color:var(--verde-scuro)}
+  .costo.consuma{background:var(--ambra-chiaro);color:#8A5D05;box-shadow:inset 0 0 0 1px var(--ambra)}
+  .modo[data-modo="live"]{border-style:dashed;border-color:var(--ambra)}
+  .modo.on[data-modo="live"]{border-style:solid;border-color:var(--ambra);background:var(--ambra-chiaro);color:#8A5D05}
+  #pillCosto{background:rgba(255,255,255,.14)}
+  #pillCosto i{background:#5BD08A}
+  #pillCosto.consuma{background:var(--ambra);color:#fff}
+  #pillCosto.consuma i{background:#fff;animation:lamp 1.2s infinite}
+  .legenda{display:flex;gap:16px;align-items:center;font-size:12.5px;color:var(--grigio);margin-top:10px}
   .modo kbd{position:absolute;top:7px;right:9px;font-size:11px;color:var(--grigio);font-family:inherit;border:1px solid var(--bordo);border-radius:4px;padding:0 5px}
   .modo:hover{border-color:var(--verde-medio)}
   .modo.on{border-color:var(--verde);background:var(--verde-chiaro);color:var(--verde-scuro)}
@@ -133,6 +143,7 @@
   <svg class="i" style="width:26px;height:26px"><use href="#i-cast"/></svg>
   <h1>Regia di laboratorio</h1>
   <span class="spazio"></span>
+  <span class="pill" id="pillCosto" title="Minuti LiveKit (5.000 gratis al mese)"><i></i><span id="txtCosto">Nessun consumo</span></span>
   <span class="pill" id="pillStato"><i></i><span id="txtStato">Non collegato</span></span>
 </header>
 
@@ -180,12 +191,13 @@
   <section class="card full">
     <h2>Cosa vedono gli studenti</h2>
     <div class="modi">
-      <button class="modo" data-modo="attesa"><kbd>1</kbd><svg class="i"><use href="#i-pausa"/></svg>Attesa<small>schermata di attesa</small></button>
-      <button class="modo" data-modo="live"><kbd>2</kbd><svg class="i"><use href="#i-cast"/></svg>Guardate me<small>il tuo schermo in diretta</small></button>
-      <button class="modo" data-modo="occhi"><kbd>3</kbd><svg class="i"><use href="#i-occhio"/></svg>Occhi a me<small>schermo fermo con messaggio</small></button>
-      <button class="modo" data-modo="prova"><kbd>4</kbd><svg class="i"><use href="#i-mano"/></svg>Prova tu<small>ognuno usa l'app</small></button>
-      <button class="modo" data-modo="video"><kbd>5</kbd><svg class="i"><use href="#i-video"/></svg>Video<small>YouTube sincronizzato</small></button>
+      <button class="modo" data-modo="attesa"><kbd>1</kbd><svg class="i"><use href="#i-pausa"/></svg>Attesa<small>schermata di attesa</small><span class="costo gratis">gratis</span></button>
+      <button class="modo" data-modo="live"><kbd>2</kbd><svg class="i"><use href="#i-cast"/></svg>Guardate me<small>il tuo schermo in diretta</small><span class="costo consuma">consuma minuti</span></button>
+      <button class="modo" data-modo="occhi"><kbd>3</kbd><svg class="i"><use href="#i-occhio"/></svg>Occhi a me<small>schermo fermo con messaggio</small><span class="costo gratis">gratis</span></button>
+      <button class="modo" data-modo="prova"><kbd>4</kbd><svg class="i"><use href="#i-mano"/></svg>Prova tu<small>ognuno usa l'app</small><span class="costo gratis">gratis</span></button>
+      <button class="modo" data-modo="video"><kbd>5</kbd><svg class="i"><use href="#i-video"/></svg>Video<small>YouTube sincronizzato</small><span class="costo gratis">gratis</span></button>
     </div>
+    <div class="legenda"><span class="costo gratis">gratis</span> passa da Firebase, nessun limite pratico <span class="costo consuma">consuma minuti</span> LiveKit: ogni postazione collegata conta 1 minuto al minuto</div>
     <div class="riga" style="justify-content:flex-end">
       <span class="aiuto" style="margin-right:auto">«Termina lezione» scollega tutte le postazioni (non consumano più minuti) e mostra «Lezione terminata».</span>
       <button class="btn amb" id="btnTermina"><svg class="i"><use href="#i-stop"/></svg>Termina lezione</button>
@@ -555,7 +567,7 @@
       t.stop();
     }
     const r = room; room = null;
-    if (r) await r.disconnect().catch(() => {});
+    if (r){ fineConsumo = Date.now() + 22000; await r.disconnect().catch(() => {}); }
     uiSchermo(false);
     msgSchermo('');
     if (stato.modo === 'live'){ stato.modo = 'attesa'; pubblicaStato(); }
@@ -570,11 +582,26 @@
   }
 
   // ---------- postazioni ----------
+  // ---------- consumo LiveKit ----------
+  // Ambra finché il docente trasmette e per i 20 s in cui le postazioni restano collegate dopo lo stop.
+  let numPc = 0, minutiLezione = 0, fineConsumo = 0;
+  function consumoAttivo(){ return !!room || Date.now() < fineConsumo; }
+  setInterval(() => {
+    const attivo = consumoAttivo();
+    if (attivo) minutiLezione += (numPc + 1) * 2 / 60;   // stima: postazioni + docente, ogni 2 s
+    $('pillCosto').classList.toggle('consuma', attivo);
+    const stima = minutiLezione >= 1 ? ' · ≈ ' + Math.round(minutiLezione) + ' min usati' : '';
+    $('txtCosto').textContent = attivo
+      ? (room ? 'Consuma minuti LiveKit' : 'Chiusura LiveKit…') + stima
+      : 'Nessun consumo' + stima;
+  }, 2000);
+
   function aggiornaPostazioni(elenco){
     const ordine = { fuori: 0, entra: 1, ok: 2 };
     const pcs = Object.values(elenco || {})
       .map(p => ({ nome: String(p.nome || 'Postazione'), spia: p.spia || 'entra' }))
       .sort((a, b) => (ordine[a.spia] - ordine[b.spia]) || a.nome.localeCompare(b.nome, 'it', { numeric: true }));
+    numPc = pcs.length;
     $('conta').innerHTML = pcs.length + ' <small>' + (pcs.length === 1 ? 'postazione' : 'postazioni') + '</small>';
     const n = k => pcs.filter(p => p.spia === k).length;
     $('riepilogo').innerHTML = pcs.length ? `<span><b class="o">${n('ok')}</b> attente</span><span><b class="f">${n('fuori')}</b> fuori</span><span><b class="e">${n('entra')}</b> da entrare</span>` : '';
