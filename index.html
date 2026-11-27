@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Regia di laboratorio</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:radial-gradient(circle at 50% 30%,#21804B,#1B6D3F 40%,#0F4527);color:#fff;text-align:center;padding:30px}
+  h1{font-size:clamp(30px,5vw,54px)}
+  .scelte{display:flex;gap:18px;flex-wrap:wrap;justify-content:center}
+  a{display:flex;flex-direction:column;align-items:center;gap:10px;width:230px;padding:26px 18px;border-radius:18px;background:#fff;color:#0F4527;text-decoration:none;font-weight:700;font-size:19px;box-shadow:0 12px 34px rgba(0,0,0,.22);transition:transform .15s}
+  a:hover{transform:translateY(-3px)}
+  a small{font-weight:400;font-size:13px;color:#5F6B63}
+  svg{width:44px;height:44px;stroke:#1B6D3F;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  footer{font-size:12px;opacity:.7}
+</style>
+</head>
+<body>
+  <h1>Regia di laboratorio</h1>
+  <div class="scelte">
+    <a href="docente.html"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M9 21h6M12 9v5M9.5 11.5 12 9l2.5 2.5"/></svg>Docente<small>trasmetti e guida la classe</small></a>
+    <a href="studente.html"><svg viewBox="0 0 24 24"><rect x="2.5" y="3.5" width="19" height="13" rx="2"/><path d="M8 20.5h8M12 16.5v4"/></svg>Postazione<small>segui la spiegazione</small></a>
+  </div>
+  <footer>Andrea Cerioli, Animatore Digitale</footer>
+</body>
+</html>

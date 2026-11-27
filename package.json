@@ -1,0 +1,10 @@
+{
+  "name": "regia-laboratorio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Regia di laboratorio: trasmissione dello schermo docente alle postazioni via LiveKit",
+  "dependencies": {
+    "livekit-server-sdk": "^2.20.1"
+  }
+}

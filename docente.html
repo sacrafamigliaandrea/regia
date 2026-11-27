@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Regia · Docente</title>
+<style>
+  :root{
+    --verde:#1B6D3F; --verde-scuro:#0F4527; --verde-chiaro:#E7F2EB; --verde-medio:#B9D9C5;
+    --ambra:#C98A12; --ambra-chiaro:#FBF1DC; --blu:#2563A8; --blu-chiaro:#E4EEF8;
+    --carta:#F6F8F6; --inchiostro:#16211A; --grigio:#5F6B63; --bordo:#D8E0DA;
+    --r:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--carta);color:var(--inchiostro);font-size:15px;min-height:100vh}
+  svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+  button{font:inherit;cursor:pointer}
+  input,select{font:inherit;color:inherit}
+
+  header{background:var(--verde);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:14px}
+  header h1{font-size:19px;font-weight:700;letter-spacing:.01em}
+  header .spazio{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;background:rgba(255,255,255,.14);font-size:13px}
+  .pill i{width:9px;height:9px;border-radius:50%;background:var(--ambra);display:inline-block}
+  .pill.ok i{background:#5BD08A}
+
+  main{max-width:1180px;margin:0 auto;padding:24px;display:grid;grid-template-columns:1.15fr .85fr;gap:20px}
+  .card{background:#fff;border:1px solid var(--bordo);border-radius:var(--r);padding:20px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--grigio);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .full{grid-column:1/-1}
+
+  /* Login */
+  #login{max-width:440px;margin:70px auto;padding:30px}
+  #login h2{font-size:22px;text-transform:none;letter-spacing:0;color:var(--inchiostro)}
+  label{display:block;font-size:13px;color:var(--grigio);margin:14px 0 6px}
+  .campo{width:100%;padding:11px 13px;border:1px solid var(--bordo);border-radius:10px;background:#fff}
+  .campo:focus{outline:2px solid var(--verde-medio);border-color:var(--verde)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:10px;padding:11px 18px;font-weight:600;background:var(--verde);color:#fff;transition:filter .15s,transform .1s}
+  .btn:hover{filter:brightness(1.08)} .btn:active{transform:scale(.98)}
+  .btn.sec{background:var(--verde-chiaro);color:var(--verde-scuro)}
+  .btn.amb{background:var(--ambra);color:#fff}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .msg{margin-top:12px;font-size:14px;color:#8A5D05;background:var(--ambra-chiaro);border-radius:8px;padding:9px 12px;display:none}
+  .msg.on{display:block}
+
+  /* Schermo */
+  .anteprima{position:relative;aspect-ratio:16/9;background:#0B1510;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#7F9A88;font-size:14px}
+  .anteprima video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none}
+  .anteprima.live video{display:block}
+  .anteprima .rec{position:absolute;top:10px;left:10px;background:var(--verde);color:#fff;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;display:none;align-items:center;gap:6px}
+  .anteprima.live .rec{display:flex}
+  .anteprima .rec i{width:7px;height:7px;border-radius:50%;background:#fff;animation:lamp 1.4s infinite}
+  @keyframes lamp{50%{opacity:.25}}
+  .riga{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  .riga .campo{width:auto;flex:1;min-width:160px}
+
+  /* Modalità */
+  .modi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .modo{border:2px solid var(--bordo);background:#fff;border-radius:12px;padding:16px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--inchiostro);font-weight:600;transition:all .15s;position:relative}
+  .modo svg.i{width:30px;height:30px}
+  .modo small{font-weight:400;color:var(--grigio);font-size:12px}
+  .modo kbd{position:absolute;top:7px;right:9px;font-size:11px;color:var(--grigio);font-family:inherit;border:1px solid var(--bordo);border-radius:4px;padding:0 5px}
+  .modo:hover{border-color:var(--verde-medio)}
+  .modo.on{border-color:var(--verde);background:var(--verde-chiaro);color:var(--verde-scuro)}
+  .modo.on[data-modo="occhi"]{border-color:var(--blu);background:var(--blu-chiaro);color:var(--blu)}
+  .modo.on[data-modo="prova"]{border-color:var(--ambra);background:var(--ambra-chiaro);color:#8A5D05}
+  .opzioni{margin-top:16px;padding-top:16px;border-top:1px dashed var(--bordo)}
+
+  /* Catalogo */
+  #lista{max-height:260px;overflow:auto;margin-top:10px;border:1px solid var(--bordo);border-radius:10px}
+  .voce{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #EEF2EF;cursor:pointer}
+  .voce:last-child{border-bottom:0}
+  .voce:hover{background:var(--verde-chiaro)}
+  .voce.sel{background:var(--ambra-chiaro)}
+  .voce b{font-weight:600}
+  .voce span{color:var(--grigio);font-size:12px;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
+
+  /* Postazioni */
+  #postazioni{display:flex;flex-wrap:wrap;gap:6px;max-height:250px;overflow:auto}
+  .pc{font-size:12px;padding:5px 10px;border-radius:999px;background:var(--verde-chiaro);color:var(--verde-scuro)}
+  .conta{font-size:42px;font-weight:700;color:var(--verde);line-height:1}
+  .conta small{font-size:15px;color:var(--grigio);font-weight:400}
+  .vuoto{color:var(--grigio);font-size:14px}
+
+  .aiuto{font-size:13px;color:var(--grigio);line-height:1.5}
+  .aiuto code{background:var(--carta);border:1px solid var(--bordo);border-radius:6px;padding:8px 10px;display:block;margin-top:8px;font-size:12px;word-break:break-all;color:var(--inchiostro)}
+  footer{text-align:center;font-size:12px;color:var(--grigio);padding:10px 0 26px}
+  .nascosto{display:none!important}
+  @media (max-width:900px){ main{grid-template-columns:1fr} .modi{grid-template-columns:repeat(2,1fr)} }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-schermo" viewBox="0 0 24 24"><rect x="2.5" y="3.5" width="19" height="13" rx="2"/><path d="M8 20.5h8M12 16.5v4"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2.5"/></symbol>
+  <symbol id="i-pausa" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-cast" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M9 21h6M12 9v5M9.5 11.5 12 9l2.5 2.5"/></symbol>
+  <symbol id="i-occhio" viewBox="0 0 24 24"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3.2"/></symbol>
+  <symbol id="i-mano" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5V4a1.5 1.5 0 0 1 3 0v6m0-4.5a1.5 1.5 0 0 1 3 0V12m0-3.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1.2a7 7 0 0 1-5.3-2.4L3 16.3a1.6 1.6 0 0 1 2.3-2.2L8 16"/></symbol>
+  <symbol id="i-utenti" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 20a6.5 6.5 0 0 0-3-5.5"/></symbol>
+  <symbol id="i-lista" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></symbol>
+  <symbol id="i-chiave" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.5"/><path d="m11.5 11.5 9-9M17 6l3 3M14.5 8.5l2 2"/></symbol>
+  <symbol id="i-terminale" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m7 9 3 3-3 3M12.5 15H17"/></symbol>
+</svg>
+
+<header>
+  <svg class="i" style="width:26px;height:26px"><use href="#i-cast"/></svg>
+  <h1>Regia di laboratorio</h1>
+  <span class="spazio"></span>
+  <span class="pill" id="pillStato"><i></i><span id="txtStato">Non collegato</span></span>
+</header>
+
+<!-- ACCESSO -->
+<section class="card" id="login">
+  <h2>Accesso docente</h2>
+  <label for="inStanza">Stanza</label>
+  <input class="campo" id="inStanza" value="lab" autocomplete="off">
+  <label for="inPin">PIN</label>
+  <input class="campo" id="inPin" type="password" inputmode="numeric" autocomplete="current-password">
+  <div class="riga"><button class="btn" id="btnCollega" style="width:100%"><svg class="i"><use href="#i-chiave"/></svg>Collega</button></div>
+  <div class="msg" id="msgLogin"></div>
+</section>
+
+<!-- REGIA -->
+<main id="regia" class="nascosto">
+
+  <section class="card">
+    <h2><svg class="i"><use href="#i-schermo"/></svg>Il tuo schermo</h2>
+    <div class="anteprima" id="anteprima">
+      <span id="anteprimaTxt">Nessuna condivisione attiva</span>
+      <video id="vidAnteprima" autoplay muted playsinline></video>
+      <div class="rec"><i></i>IN ONDA</div>
+    </div>
+    <div class="riga">
+      <select class="campo" id="selQualita" title="Qualità del flusso">
+        <option value="nitido">Testo nitido · 10 fps (pagine, app, documenti)</option>
+        <option value="fluido">Fluido · 24 fps (animazioni, giochi, video)</option>
+      </select>
+      <button class="btn" id="btnCondividi"><svg class="i"><use href="#i-cast"/></svg>Condividi una scheda</button>
+      <button class="btn sec nascosto" id="btnStop"><svg class="i"><use href="#i-stop"/></svg>Interrompi</button>
+    </div>
+    <p class="aiuto" style="margin-top:10px">Mentre condividi puoi passare a un'altra scheda con «Condividi questa scheda» nella barra di Chrome: gli studenti ti seguono senza interruzioni.</p>
+  </section>
+
+  <section class="card">
+    <h2><svg class="i"><use href="#i-utenti"/></svg>Postazioni collegate</h2>
+    <div class="conta" id="conta">0 <small>postazioni</small></div>
+    <div id="postazioni" style="margin-top:14px"><span class="vuoto">Nessuna postazione collegata</span></div>
+  </section>
+
+  <section class="card full">
+    <h2>Cosa vedono gli studenti</h2>
+    <div class="modi">
+      <button class="modo" data-modo="attesa"><kbd>1</kbd><svg class="i"><use href="#i-pausa"/></svg>Attesa<small>schermata di attesa</small></button>
+      <button class="modo" data-modo="live"><kbd>2</kbd><svg class="i"><use href="#i-cast"/></svg>Guardate me<small>il tuo schermo in diretta</small></button>
+      <button class="modo" data-modo="occhi"><kbd>3</kbd><svg class="i"><use href="#i-occhio"/></svg>Occhi a me<small>schermo fermo con messaggio</small></button>
+      <button class="modo" data-modo="prova"><kbd>4</kbd><svg class="i"><use href="#i-mano"/></svg>Prova tu<small>ognuno usa l'app</small></button>
+    </div>
+
+    <div class="opzioni">
+      <div class="riga" style="margin-top:0">
+        <label for="inMsg" style="margin:0;min-width:150px">Messaggio «Occhi a me»</label>
+        <input class="campo" id="inMsg" value="Occhi al docente" maxlength="80">
+      </div>
+    </div>
+
+    <div class="opzioni">
+      <h2 style="margin-bottom:8px"><svg class="i"><use href="#i-lista"/></svg>App per «Prova tu»</h2>
+      <div class="riga" style="margin-top:0">
+        <input class="campo" id="inCerca" placeholder="Cerca nel catalogo…" autocomplete="off">
+        <input class="campo" id="inUrl" placeholder="oppure incolla un URL https://…" autocomplete="off" style="flex:1.4">
+      </div>
+      <div id="lista"><div class="voce"><span class="vuoto">Caricamento catalogo…</span></div></div>
+      <p class="aiuto" style="margin-top:8px" id="selInfo">Nessuna app selezionata.</p>
+    </div>
+  </section>
+
+  <section class="card full">
+    <h2><svg class="i"><use href="#i-terminale"/></svg>Apri la regia sulle 28 postazioni (Apple Remote Desktop)</h2>
+    <p class="aiuto">ARD → seleziona i Mac → <b>Interact › Send UNIX Command</b> → esegui come <b>utente corrente</b>:</p>
+    <p class="aiuto"><code id="cmdArd"></code></p>
+    <div class="riga"><button class="btn sec" id="btnCopia">Copia comando</button></div>
+  </section>
+</main>
+
+<footer>Regia di laboratorio · Andrea Cerioli, Animatore Digitale</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
+<script>
+(() => {
+  const { Room, RoomEvent, Track } = LivekitClient;
+  const $ = id => document.getElementById(id);
+
+  const QUALITA = {
+    nitido: { res: { width: 1920, height: 1080, frameRate: 10 }, enc: { maxBitrate: 1_200_000, maxFramerate: 10 }, hint: 'detail' },
+    fluido: { res: { width: 1920, height: 1080, frameRate: 24 }, enc: { maxBitrate: 2_500_000, maxFramerate: 24 }, hint: 'motion' },
+  };
+
+  const stato = { modo: 'attesa', url: '', titolo: '', msg: 'Occhi al docente' };
+  let room = null, catalogo = [];
+
+  // ---------- utilità ----------
+  const leggi = k => { try { return localStorage.getItem(k); } catch { return null; } };
+  const scrivi = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  function pill(txt, ok){ $('txtStato').textContent = txt; $('pillStato').classList.toggle('ok', !!ok); }
+  function avviso(txt){ const m = $('msgLogin'); m.textContent = txt; m.classList.toggle('on', !!txt); }
+
+  $('inStanza').value = leggi('regia_stanza') || 'lab';
+
+  // ---------- accesso ----------
+  async function collega(){
+    avviso('');
+    const stanza = $('inStanza').value.trim() || 'lab';
+    const pin = $('inPin').value.trim();
+    if (!pin) return avviso('Inserisci il PIN.');
+    $('btnCollega').disabled = true;
+    try {
+      const r = await fetch('/api/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ruolo: 'docente', stanza, pin })
+      });
+      const dati = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(dati.errore || ('Errore ' + r.status));
+      scrivi('regia_stanza', dati.stanza);
+      await avviaStanza(dati.url, dati.token, dati.stanza);
+    } catch (e) {
+      avviso(e.message);
+    } finally {
+      $('btnCollega').disabled = false;
+    }
+  }
+
+  async function avviaStanza(url, token, stanza){
+    room = new Room({ adaptiveStream: false, dynacast: true });
+    room
+      .on(RoomEvent.ParticipantConnected, aggiornaPostazioni)
+      .on(RoomEvent.ParticipantDisconnected, aggiornaPostazioni)
+      .on(RoomEvent.LocalTrackUnpublished, pub => { if (pub.source === Track.Source.ScreenShare) uiSchermo(false); })
+      .on(RoomEvent.Reconnecting, () => pill('Riconnessione…', false))
+      .on(RoomEvent.Reconnected, () => { pill('In regia · ' + stanza, true); pubblicaStato(); })
+      .on(RoomEvent.Disconnected, () => { pill('Disconnesso', false); uiSchermo(false); });
+
+    await room.connect(url, token);
+    pill('In regia · ' + stanza, true);
+    $('login').classList.add('nascosto');
+    $('regia').classList.remove('nascosto');
+    aggiornaComandoArd(stanza);
+    aggiornaPostazioni();
+    await pubblicaStato();
+  }
+
+  // Lo stato vive negli attributi del docente: chi si collega dopo lo riceve subito
+  async function pubblicaStato(){
+    document.querySelectorAll('.modo').forEach(b => b.classList.toggle('on', b.dataset.modo === stato.modo));
+    if (!room) return;
+    try {
+      await room.localParticipant.setAttributes({
+        modo: stato.modo, url: stato.url, titolo: stato.titolo, msg: stato.msg
+      });
+    } catch (e) { console.warn('[Regia] attributi', e); }
+  }
+
+  function impostaModo(modo){
+    if (modo === 'prova' && !stato.url){
+      $('selInfo').innerHTML = '<b style="color:#8A5D05">Scegli prima un\'app dal catalogo o incolla un URL.</b>';
+      $('inCerca').focus();
+      return;
+    }
+    stato.modo = modo;
+    pubblicaStato();
+  }
+
+  // ---------- schermo ----------
+  async function condividi(){
+    if (!room) return;
+    const q = QUALITA[$('selQualita').value];
+    try {
+      await room.localParticipant.setScreenShareEnabled(true,
+        { audio: false, resolution: q.res, contentHint: q.hint, selfBrowserSurface: 'exclude', surfaceSwitching: 'include' },
+        { screenShareEncoding: q.enc }
+      );
+      const pub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+      if (pub && pub.track){ pub.track.attach($('vidAnteprima')); uiSchermo(true); }
+      if (stato.modo === 'attesa'){ stato.modo = 'live'; pubblicaStato(); }
+    } catch (e) {
+      if (e && e.name !== 'NotAllowedError') alert('Condivisione non avviata: ' + e.message);
+    }
+  }
+  async function interrompi(){
+    if (!room) return;
+    await room.localParticipant.setScreenShareEnabled(false);
+    uiSchermo(false);
+  }
+  function uiSchermo(attivo){
+    $('anteprima').classList.toggle('live', attivo);
+    $('anteprimaTxt').classList.toggle('nascosto', attivo);
+    $('btnCondividi').classList.toggle('nascosto', attivo);
+    $('btnStop').classList.toggle('nascosto', !attivo);
+    $('selQualita').disabled = attivo;
+  }
+
+  // ---------- postazioni ----------
+  function aggiornaPostazioni(){
+    if (!room) return;
+    const nomi = [...room.remoteParticipants.values()].map(p => p.name || p.identity).sort((a, b) => a.localeCompare(b, 'it', { numeric: true }));
+    $('conta').innerHTML = nomi.length + ' <small>' + (nomi.length === 1 ? 'postazione' : 'postazioni') + '</small>';
+    const box = $('postazioni');
+    box.innerHTML = '';
+    if (!nomi.length){ box.innerHTML = '<span class="vuoto">Nessuna postazione collegata</span>'; return; }
+    nomi.forEach(n => { const s = document.createElement('span'); s.className = 'pc'; s.textContent = n; box.appendChild(s); });
+  }
+
+  // ---------- catalogo ----------
+  async function caricaCatalogo(){
+    try {
+      const r = await fetch('catalogo.json', { cache: 'no-store' });
+      const dati = await r.json();
+      catalogo = (Array.isArray(dati) ? dati : dati.app || []).filter(a => a && a.url);
+    } catch { catalogo = []; }
+    disegnaLista();
+  }
+  function disegnaLista(){
+    const q = $('inCerca').value.trim().toLowerCase();
+    const box = $('lista');
+    const voci = catalogo.filter(a => !q || (a.titolo + ' ' + a.url + ' ' + (a.categoria || '')).toLowerCase().includes(q));
+    box.innerHTML = '';
+    if (!voci.length){ box.innerHTML = '<div class="voce"><span class="vuoto" style="margin:0">Nessuna app trovata: puoi incollare l\'URL a destra.</span></div>'; return; }
+    voci.forEach(a => {
+      const d = document.createElement('div');
+      d.className = 'voce' + (a.url === stato.url ? ' sel' : '');
+      const b = document.createElement('b'); b.textContent = a.titolo || a.url;
+      const s = document.createElement('span'); s.textContent = a.categoria || host(a.url);
+      d.append(b, s);
+      d.addEventListener('click', () => scegliApp(a.url, a.titolo));
+      box.appendChild(d);
+    });
+  }
+  function host(u){ try { return new URL(u).hostname; } catch { return u; } }
+  function scegliApp(url, titolo){
+    try { const u = new URL(url); if (!/^https?:$/.test(u.protocol)) throw 0; } catch { $('selInfo').textContent = 'URL non valido.'; return; }
+    stato.url = url;
+    stato.titolo = titolo || new URL(url).hostname.replace('.vercel.app', '');
+    $('selInfo').innerHTML = 'Selezionata: <b></b> — premi «Prova tu» (o il tasto 4) per aprirla su tutte le postazioni.';
+    $('selInfo').querySelector('b').textContent = stato.titolo;
+    disegnaLista();
+    if (stato.modo === 'prova') pubblicaStato(); // cambio app al volo durante la prova
+  }
+
+  // ---------- comando ARD ----------
+  function aggiornaComandoArd(stanza){
+    const base = location.origin + location.pathname.replace(/docente\.html$/, '') + 'studente.html';
+    const cmd = `open -a "Google Chrome" "${base}?stanza=${encodeURIComponent(stanza)}&pc=$(scutil --get ComputerName | tr ' ' '-')"`;
+    $('cmdArd').textContent = cmd;
+  }
+
+  // ---------- eventi ----------
+  $('btnCollega').addEventListener('click', collega);
+  $('inPin').addEventListener('keydown', e => { if (e.key === 'Enter') collega(); });
+  $('btnCondividi').addEventListener('click', condividi);
+  $('btnStop').addEventListener('click', interrompi);
+  document.querySelectorAll('.modo').forEach(b => b.addEventListener('click', () => impostaModo(b.dataset.modo)));
+  $('inMsg').addEventListener('change', () => { stato.msg = $('inMsg').value.trim() || 'Occhi al docente'; if (stato.modo === 'occhi') pubblicaStato(); });
+  $('inCerca').addEventListener('input', disegnaLista);
+  $('inUrl').addEventListener('change', () => { const v = $('inUrl').value.trim(); if (v) scegliApp(v); });
+  $('btnCopia').addEventListener('click', () => {
+    navigator.clipboard.writeText($('cmdArd').textContent).then(() => { $('btnCopia').textContent = 'Copiato'; setTimeout(() => $('btnCopia').textContent = 'Copia comando', 1500); });
+  });
+  document.addEventListener('keydown', e => {
+    if (!room || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+    const m = { '1': 'attesa', '2': 'live', '3': 'occhi', '4': 'prova' }[e.key];
+    if (m) impostaModo(m);
+  });
+  window.addEventListener('beforeunload', e => { if (room && room.localParticipant.isScreenShareEnabled) { e.preventDefault(); e.returnValue = ''; } });
+
+  caricaCatalogo();
+})();
+</script>
+</body>
+</html>
