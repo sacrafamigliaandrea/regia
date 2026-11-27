@@ -148,6 +148,7 @@
       <button class="btn" id="btnCondividi"><svg class="i"><use href="#i-cast"/></svg>Condividi una scheda</button>
       <button class="btn sec nascosto" id="btnStop"><svg class="i"><use href="#i-stop"/></svg>Interrompi</button>
     </div>
+    <div class="msg" id="msgSchermo"></div>
     <p class="aiuto" style="margin-top:10px">Mentre condividi puoi passare a un'altra scheda con «Condividi questa scheda» nella barra di Chrome: gli studenti ti seguono senza interruzioni.</p>
   </section>
 
@@ -229,6 +230,20 @@
   $('inStanza').value = leggi('regia_stanza') || 'lab';
 
   // ---------- accesso ----------
+  let cred = null;            // { stanza, pin } solo in memoria, per ricollegarsi da soli
+  let riconnessione = null;   // promessa in corso, per non aprirne due insieme
+  let manuale = false;        // true quando la disconnessione è voluta
+
+  async function prendiGettone(stanza, pin){
+    const r = await fetch('/api/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ruolo: 'docente', stanza, pin })
+    });
+    const dati = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(dati.errore || ('Errore ' + r.status));
+    return dati;
+  }
+
   async function collega(){
     avviso('');
     const stanza = $('inStanza').value.trim() || 'lab';
@@ -236,12 +251,8 @@
     if (!pin) return avviso('Inserisci il PIN.');
     $('btnCollega').disabled = true;
     try {
-      const r = await fetch('/api/token', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ruolo: 'docente', stanza, pin })
-      });
-      const dati = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(dati.errore || ('Errore ' + r.status));
+      const dati = await prendiGettone(stanza, pin);
+      cred = { stanza: dati.stanza, pin };
       scrivi('regia_stanza', dati.stanza);
       await avviaStanza(dati.url, dati.token, dati.stanza);
     } catch (e) {
@@ -252,29 +263,60 @@
   }
 
   async function avviaStanza(url, token, stanza){
-    room = new Room({ adaptiveStream: false, dynacast: true });
-    room
+    const r = new Room({ adaptiveStream: false, dynacast: true });
+    r
       .on(RoomEvent.ParticipantConnected, aggiornaPostazioni)
       .on(RoomEvent.ParticipantDisconnected, aggiornaPostazioni)
-      .on(RoomEvent.ParticipantAttributesChanged, (changed, p) => { if (p !== room.localParticipant) aggiornaPostazioni(); })
-      .on(RoomEvent.LocalTrackUnpublished, pub => { if (pub.source === Track.Source.ScreenShare) uiSchermo(false); })
+      .on(RoomEvent.ParticipantAttributesChanged, (changed, p) => { if (p !== r.localParticipant) aggiornaPostazioni(); })
       .on(RoomEvent.Reconnecting, () => pill('Riconnessione…', false))
       .on(RoomEvent.Reconnected, () => { pill('In regia · ' + stanza, true); pubblicaStato(); })
-      .on(RoomEvent.Disconnected, () => { pill('Disconnesso', false); uiSchermo(false); });
+      .on(RoomEvent.Disconnected, () => {
+        if (r !== room) return;               // stanza vecchia già sostituita
+        pill('Disconnesso: mi ricollego…', false);
+        if (!manuale) setTimeout(() => riconnetti().catch(() => {}), 1500);
+      });
 
-    await room.connect(url, token);
+    await r.connect(url, token);
+    room = r;
     pill('In regia · ' + stanza, true);
     $('login').classList.add('nascosto');
     $('regia').classList.remove('nascosto');
     aggiornaComandoArd(stanza);
     aggiornaPostazioni();
     await pubblicaStato();
+    // se stavi già trasmettendo, la trasmissione riprende sulla nuova connessione
+    if (tracciaLocale && !tracciaLocale.isMuted) await pubblicaTraccia().catch(() => {});
   }
+
+  // Ricollega con le credenziali in memoria (tentativi crescenti finché riesce)
+  function riconnetti(){
+    if (riconnessione) return riconnessione;
+    riconnessione = (async () => {
+      for (let t = 1; t <= 8; t++){
+        try {
+          pill('Mi ricollego… (' + t + ')', false);
+          const vecchia = room; room = null;
+          if (vecchia){ manuale = true; await vecchia.disconnect().catch(() => {}); manuale = false; }
+          const dati = await prendiGettone(cred.stanza, cred.pin);
+          await avviaStanza(dati.url, dati.token, dati.stanza);
+          return;
+        } catch (e) {
+          console.warn('[Regia] riconnessione', e);
+          await new Promise(res => setTimeout(res, Math.min(10000, 1500 * t)));
+        }
+      }
+      pill('Non collegato: ricarica la pagina', false);
+      throw new Error('Riconnessione non riuscita');
+    })().finally(() => { riconnessione = null; });
+    return riconnessione;
+  }
+
+  const collegato = () => room && room.state === 'connected';
 
   // Lo stato vive negli attributi del docente: chi si collega dopo lo riceve subito
   async function pubblicaStato(){
     document.querySelectorAll('.modo').forEach(b => b.classList.toggle('on', b.dataset.modo === stato.modo));
-    if (!room) return;
+    if (!collegato()) return;
     try {
       await room.localParticipant.setAttributes({
         modo: stato.modo, url: stato.url, titolo: stato.titolo, msg: stato.msg
@@ -293,25 +335,58 @@
   }
 
   // ---------- schermo ----------
+  // La cattura dello schermo è separata dalla pubblicazione: se la connessione
+  // cade, si ripubblica la stessa traccia senza richiedere di nuovo la scheda.
+  let tracciaLocale = null, qualitaAttiva = null;
+
+  function msgSchermo(txt){ const m = $('msgSchermo'); m.textContent = txt || ''; m.classList.toggle('on', !!txt); }
+
+  async function pubblicaTraccia(){
+    const pubb = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+    if (pubb && pubb.track === tracciaLocale) return;
+    await room.localParticipant.publishTrack(tracciaLocale, {
+      source: Track.Source.ScreenShare, simulcast: false, videoEncoding: qualitaAttiva.enc
+    });
+  }
+
   async function condividi(){
-    if (!room) return;
+    msgSchermo('');
     const q = QUALITA[$('selQualita').value];
     try {
-      await room.localParticipant.setScreenShareEnabled(true,
-        { audio: false, resolution: q.res, contentHint: q.hint, selfBrowserSurface: 'exclude', surfaceSwitching: 'include' },
-        { screenShareEncoding: q.enc }
-      );
-      const pub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
-      if (pub && pub.track){ pub.track.attach($('vidAnteprima')); uiSchermo(true); }
-      if (stato.modo === 'attesa'){ stato.modo = 'live'; pubblicaStato(); }
+      const [t] = await LivekitClient.createLocalScreenTracks({
+        audio: false, resolution: q.res, contentHint: q.hint,
+        selfBrowserSurface: 'exclude', surfaceSwitching: 'include'
+      });
+      tracciaLocale = t; qualitaAttiva = q;
+      t.mediaStreamTrack.addEventListener('ended', () => interrompi()); // «Interrompi condivisione» di Chrome
+      t.attach($('vidAnteprima'));
+      uiSchermo(true);
     } catch (e) {
-      if (e && e.name !== 'NotAllowedError') alert('Condivisione non avviata: ' + e.message);
+      if (!e || e.name !== 'NotAllowedError') msgSchermo('Cattura dello schermo non riuscita: ' + (e && e.message));
+      return;
+    }
+    for (let tentativo = 1; tentativo <= 2; tentativo++){
+      try {
+        if (!collegato()) await riconnetti();
+        await pubblicaTraccia();
+        if (stato.modo === 'attesa'){ stato.modo = 'live'; pubblicaStato(); }
+        return;
+      } catch (e) {
+        console.warn('[Regia] pubblicazione', e);
+        if (tentativo === 1){ msgSchermo('Connessione instabile: mi ricollego e riprovo…'); await riconnetti().catch(() => {}); }
+        else msgSchermo('La trasmissione non parte: controlla la rete e riprova. (' + e.message + ')');
+      }
     }
   }
+
   async function interrompi(){
-    if (!room) return;
-    await room.localParticipant.setScreenShareEnabled(false);
+    const t = tracciaLocale; tracciaLocale = null;
+    if (t){
+      if (collegato()) await room.localParticipant.unpublishTrack(t).catch(() => {});
+      t.stop();
+    }
     uiSchermo(false);
+    msgSchermo('');
   }
   function uiSchermo(attivo){
     $('anteprima').classList.toggle('live', attivo);
@@ -407,7 +482,7 @@
     const m = { '1': 'attesa', '2': 'live', '3': 'occhi', '4': 'prova' }[e.key];
     if (m) impostaModo(m);
   });
-  window.addEventListener('beforeunload', e => { if (room && room.localParticipant.isScreenShareEnabled) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', e => { if (tracciaLocale) { e.preventDefault(); e.returnValue = ''; } });
 
   caricaCatalogo();
 })();
