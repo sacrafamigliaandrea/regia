@@ -121,84 +121,164 @@
 <button id="btnAudio" style="display:none;position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:20;font:inherit;font-size:18px;font-weight:700;border:0;border-radius:999px;padding:14px 30px;background:#fff;color:#0F4527;box-shadow:0 8px 30px rgba(0,0,0,.35);cursor:pointer">Tocca per attivare l'audio</button>
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@13.4.0/firebase-app-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@13.4.0/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@13.4.0/firebase-database-compat.js"></script>
 <script>
 (() => {
   const { Room, RoomEvent, Track } = LivekitClient;
   const qs = new URLSearchParams(location.search);
-  const STANZA = qs.get('stanza') || 'lab';
+  const STANZA_RICHIESTA = qs.get('stanza') || 'lab';
   const NOME = (qs.get('pc') || leggi('regia_pc') || ('Postazione-' + Math.random().toString(36).slice(2, 6))).slice(0, 24);
   scrivi('regia_pc', NOME);
 
   const $ = id => document.getElementById(id);
   const video = $('video'), frame = $('frame'), audio = $('audio');
-  let room = null, tracciaSchermo = null, tracciaAudio = null, entrato = false, tentativi = 0;
+
+  // Stato condiviso (Firebase) e connessione schermo (LiveKit, solo in «Guardate me»)
+  let db = null, rif = null, STANZA = STANZA_RICHIESTA, offsetServer = 0;
+  let S = {}, docentePresente = false, collegatoFb = false;
+  let room = null, tracciaSchermo = null, tracciaAudio = null, lkInCorso = false, lkStacco = null;
+  let entrato = false, finita = false;
 
   $('lblPostazione').textContent = NOME + ' · stanza ' + STANZA;
 
   function leggi(k){ try { return localStorage.getItem(k); } catch { return null; } }
   function scrivi(k,v){ try { localStorage.setItem(k,v); } catch {} }
-
-  function mostra(id){
-    document.querySelectorAll('.vista').forEach(v => v.classList.toggle('on', v.id === id));
-  }
-  function stato(txt, ok){
-    $('statoTxt').textContent = txt;
-    $('stato').classList.toggle('ok', !!ok);
-  }
-
-  function docente(){
-    if (!room) return null;
-    for (const p of room.remoteParticipants.values()) if (p.identity === 'docente') return p;
-    return null;
-  }
+  function mostra(id){ document.querySelectorAll('.vista').forEach(v => v.classList.toggle('on', v.id === id)); }
+  function stato(txt, ok){ $('statoTxt').textContent = txt; $('stato').classList.toggle('ok', !!ok); }
+  const adesso = () => Date.now() + offsetServer; // orologio del server Firebase, uguale per tutti
 
   // L'audio della lezione si sente solo in «Guardate me»: in «Prova tu» l'app ha il suo audio
-  function aggiornaAudio(modo){ audio.muted = modo !== 'live'; }
+  function aggiornaAudio(){ audio.muted = S.modo !== 'live'; }
   function aggiornaBtnAudio(){
-    const serve = entrato && room && !room.canPlaybackAudio;
-    $('btnAudio').style.display = serve ? 'block' : 'none';
+    const serve = entrato && room && !room.canPlaybackAudio && S.modo === 'live';
+    if (serve){ $('btnAudio').textContent = "Tocca per attivare l'audio"; $('btnAudio').style.display = 'block'; }
+    else if ($('btnAudio').textContent.startsWith("Tocca per attivare")) $('btnAudio').style.display = 'none';
   }
 
-  // Unica funzione che decide cosa vede lo studente
+  // ---------- Firebase: stato della lezione + presenza ----------
+  async function avviaFirebase(){
+    stato('Connessione…', false);
+    const r = await fetch('/api/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ruolo: 'studente', stanza: STANZA_RICHIESTA, nome: NOME })
+    });
+    if (!r.ok) throw new Error('Configurazione non disponibile (' + r.status + ')');
+    const dati = await r.json();
+    STANZA = dati.stanza;
+    if (!firebase.apps.length) firebase.initializeApp(dati.firebase);
+    await firebase.auth().signInAnonymously();
+    db = firebase.database();
+    rif = db.ref('regia/' + STANZA);
+
+    db.ref('.info/serverTimeOffset').on('value', s => { offsetServer = s.val() || 0; });
+    db.ref('.info/connected').on('value', s => {
+      collegatoFb = !!s.val();
+      if (collegatoFb && !finita) presenza();
+      stato(collegatoFb ? 'Collegato · ' + NOME : 'Riconnessione…', collegatoFb);
+    });
+    rif.child('stato').on('value', s => { S = s.val() || {}; applica(); });
+    rif.child('docente').on('value', s => { docentePresente = !!s.val(); applica(); });
+  }
+
+  let ultimaSpia = '';
+  function presenza(){
+    const me = rif.child('postazioni/' + firebase.auth().currentUser.uid);
+    me.onDisconnect().remove();
+    ultimaSpia = '';
+    segnala(true);
+  }
+
+  // ---------- Unica funzione che decide cosa vede lo studente ----------
   function applica(){
-    const dd = docente();
-    aggiornaAudio(dd ? (dd.attributes || {}).modo : '');
+    aggiornaAudio();
+    gestisciLiveKit();
     aggiornaBtnAudio();
-    if (!entrato) return;
-    const d = docente();
-    if (!d){
+    if (!entrato || finita) return;
+    if (!docentePresente){
+      pausaVideo();
       $('attesaTitolo').textContent = 'In attesa del docente…';
       $('attesaSotto').textContent = 'Resta su questa schermata: la spiegazione partirà da sola.';
       return mostra('v-attesa');
     }
-    const a = d.attributes || {};
-    const modo = a.modo || 'attesa';
+    const modo = S.modo || 'attesa';
     if (modo === 'fine') return terminaLezione();
-
-    if (modo === 'prova' && a.url){
-      if (frame.dataset.url !== a.url){ frame.src = a.url; frame.dataset.url = a.url; }
-      $('provaTitolo').textContent = a.titolo ? 'Prova tu · ' + a.titolo : 'Prova tu';
+    if (modo === 'prova' && S.url){
+      pausaVideo();
+      if (frame.dataset.url !== S.url){ frame.src = S.url; frame.dataset.url = S.url; }
+      $('provaTitolo').textContent = S.titolo ? 'Prova tu · ' + S.titolo : 'Prova tu';
       return mostra('v-prova');
     }
-    if (modo === 'video' && a.vid){
-      sincronizzaVideo(a);
+    if (modo === 'video' && S.vid){
+      sincronizzaVideo(S);
       return mostra('v-video');
     }
     pausaVideo();
     if (modo === 'occhi'){
-      $('occhiMsg').textContent = a.msg || 'Occhi al docente';
+      $('occhiMsg').textContent = S.msg || 'Occhi al docente';
       return mostra('v-occhi');
     }
-    if (modo === 'live' && tracciaSchermo){
-      return mostra('v-live');
-    }
+    if (modo === 'live' && tracciaSchermo) return mostra('v-live');
     $('attesaTitolo').textContent = modo === 'live' ? 'Il docente sta preparando lo schermo…' : 'Tra poco si parte';
     $('attesaSotto').textContent = 'Resta su questa schermata.';
     mostra('v-attesa');
   }
 
+  // ---------- LiveKit: collegato solo mentre serve lo schermo ----------
+  function serveSchermo(){ return !finita && docentePresente && S.modo === 'live'; }
+  function gestisciLiveKit(){
+    if (serveSchermo()){
+      if (lkStacco){ clearTimeout(lkStacco); lkStacco = null; }
+      if (!room && !lkInCorso) collegaLiveKit();
+    } else if (room && !lkStacco){
+      // breve attesa prima di staccare: passare da 2 a 3 e tornare non riapre la connessione
+      lkStacco = setTimeout(() => { lkStacco = null; if (!serveSchermo()) staccaLiveKit(); }, 20000);
+    }
+  }
+  async function collegaLiveKit(){
+    lkInCorso = true;
+    try {
+      const r = await fetch('/api/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ruolo: 'studente', stanza: STANZA, nome: NOME, livekit: true })
+      });
+      if (!r.ok) throw new Error('Gettone schermo non disponibile (' + r.status + ')');
+      const { token, url } = await r.json();
+      const nuova = new Room({ adaptiveStream: true, dynacast: true });
+      nuova
+        .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
+          if (p.identity !== 'docente') return;
+          if (track.source === Track.Source.ScreenShare){ tracciaSchermo = track; track.attach(video); applica(); }
+          if (track.source === Track.Source.ScreenShareAudio){ tracciaAudio = track; track.attach(audio); }
+        })
+        .on(RoomEvent.TrackUnsubscribed, track => {
+          if (track === tracciaSchermo){ track.detach(video); tracciaSchermo = null; applica(); }
+          if (track === tracciaAudio){ track.detach(audio); tracciaAudio = null; }
+        })
+        .on(RoomEvent.AudioPlaybackStatusChanged, aggiornaBtnAudio)
+        .on(RoomEvent.Disconnected, () => {
+          if (room !== nuova) return;
+          room = null; tracciaSchermo = null; tracciaAudio = null;
+          applica(); // se lo schermo serve ancora, si ricollega da sé
+        });
+      await nuova.connect(url, token, { autoSubscribe: true });
+      room = nuova;
+      if (!serveSchermo()) gestisciLiveKit();
+    } catch (e) {
+      console.warn('[Regia] schermo', e);
+      setTimeout(() => { if (serveSchermo() && !room) collegaLiveKit(); }, 4000);
+    } finally {
+      lkInCorso = false;
+    }
+  }
+  function staccaLiveKit(){
+    const r = room; room = null; tracciaSchermo = null; tracciaAudio = null;
+    if (r) r.disconnect().catch(() => {});
+  }
+
   // ---------- video sincronizzato ----------
-  let yt = null, ytProntoP = null, ytVid = '', ytPartito = false, ytRif = null;
+  let yt = null, ytProntoP = null, ytVid = '', ytRif = null;
   const ytApi = new Promise(res => {
     window.onYouTubeIframeAPIReady = res;
     const sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(sc);
@@ -211,7 +291,7 @@
         events: {
           onReady: () => { yt.unMute(); yt.setVolume(100); res(); },
           onStateChange: e => {
-            if (e.data === YT.PlayerState.PLAYING){ ytPartito = true; $('ytPoster').style.display = 'none'; $('ytFine').style.display = 'none'; $('btnAudio').style.display = 'none'; }
+            if (e.data === YT.PlayerState.PLAYING){ $('ytPoster').style.display = 'none'; $('ytFine').style.display = 'none'; if ($('btnAudio').textContent.includes('video')) $('btnAudio').style.display = 'none'; }
             if (e.data === YT.PlayerState.ENDED) $('ytFine').style.display = 'flex';
           }
         }
@@ -220,13 +300,13 @@
     return ytProntoP;
   }
   function posizioneAttesa(a){
-    const vt = parseFloat(a.vt) || 0, vts = parseInt(a.vts, 10) || Date.now();
-    return a.vplay === '1' ? vt + (Date.now() - vts) / 1000 : vt;
+    const vt = parseFloat(a.vt) || 0, vts = Number(a.vts) || adesso();
+    return a.vplay === '1' ? vt + (adesso() - vts) / 1000 : vt;
   }
   async function sincronizzaVideo(a){
     ytRif = a;
     if (a.vid !== ytVid){
-      ytVid = a.vid; ytPartito = false;
+      ytVid = a.vid;
       $('ytPoster').style.backgroundImage = `url(https://i.ytimg.com/vi/${a.vid}/hqdefault.jpg)`;
       $('ytPoster').style.display = 'flex'; $('ytFine').style.display = 'none';
       if (!yt) await creaPlayer(a.vid); else { await ytProntoP; yt.cueVideoById(a.vid); }
@@ -234,80 +314,26 @@
     await ytProntoP;
     allineaVideo();
   }
+  let avvisoVideo = null;
   function allineaVideo(){
     if (!yt || !ytRif || !yt.getPlayerState) return;
     const a = ytRif, attesa = posizioneAttesa(a), ora = yt.getCurrentTime() || 0, st = yt.getPlayerState();
     if (Math.abs(ora - attesa) > 1.2) yt.seekTo(attesa, true);
     if (a.vplay === '1' && st !== YT.PlayerState.PLAYING && st !== YT.PlayerState.BUFFERING && st !== YT.PlayerState.ENDED){
       yt.playVideo();
-      // se il browser blocca l'avvio con audio, serve un tocco
-      setTimeout(() => { if (yt.getPlayerState() !== YT.PlayerState.PLAYING && ytRif && ytRif.vplay === '1'){ $('btnAudio').textContent = 'Tocca per avviare il video'; $('btnAudio').style.display = 'block'; } }, 2500);
+      if (!avvisoVideo) avvisoVideo = setTimeout(() => {
+        avvisoVideo = null;
+        if (ytRif && ytRif.vplay === '1' && yt.getPlayerState() !== YT.PlayerState.PLAYING){
+          $('btnAudio').textContent = 'Tocca per avviare il video'; $('btnAudio').style.display = 'block';
+        }
+      }, 2500);
     }
     if (a.vplay !== '1' && st === YT.PlayerState.PLAYING) yt.pauseVideo();
   }
-  function pausaVideo(){ ytRif = null; if (yt && yt.pauseVideo && yt.getPlayerState && yt.getPlayerState() === YT.PlayerState.PLAYING) yt.pauseVideo(); }
+  function pausaVideo(){ ytRif = null; if (yt && yt.getPlayerState && yt.getPlayerState() === YT.PlayerState.PLAYING) yt.pauseVideo(); }
   setInterval(() => { if (ytRif) allineaVideo(); }, 1000);
 
-  async function prendiGettone(){
-    const r = await fetch('/api/token', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ruolo: 'studente', stanza: STANZA, nome: NOME })
-    });
-    if (!r.ok) throw new Error('Gettone non disponibile (' + r.status + ')');
-    return r.json();
-  }
-
-  async function connetti(){
-    stato('Connessione…', false);
-    try {
-      const { token, url } = await prendiGettone();
-      room = new Room({ adaptiveStream: true, dynacast: true });
-
-      room
-        .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
-          if (p.identity === 'docente' && track.source === Track.Source.ScreenShare){
-            tracciaSchermo = track; track.attach(video); applica();
-          }
-          if (p.identity === 'docente' && track.source === Track.Source.ScreenShareAudio){
-            tracciaAudio = track; track.attach(audio); applica();
-          }
-        })
-        .on(RoomEvent.TrackUnsubscribed, (track, pub, p) => {
-          if (track === tracciaSchermo){ track.detach(video); tracciaSchermo = null; applica(); }
-          if (track === tracciaAudio){ track.detach(audio); tracciaAudio = null; }
-        })
-        .on(RoomEvent.ParticipantAttributesChanged, applica)
-        .on(RoomEvent.AudioPlaybackStatusChanged, aggiornaBtnAudio)
-        .on(RoomEvent.ParticipantConnected, applica)
-        .on(RoomEvent.ParticipantDisconnected, p => { if (p.identity === 'docente'){ tracciaSchermo = null; tracciaAudio = null; } applica(); })
-        .on(RoomEvent.Reconnecting, () => stato('Riconnessione…', false))
-        .on(RoomEvent.Reconnected, () => { stato('Collegato', true); segnala(true); })
-        .on(RoomEvent.Disconnected, () => {
-          tracciaSchermo = null; tracciaAudio = null; room = null;
-          if (finita){ stato('Lezione terminata', false); return; }
-          stato('Disconnesso: riprovo…', false);
-          applica();
-          setTimeout(connetti, 3000);
-        });
-
-      await room.connect(url, token, { autoSubscribe: true });
-      tentativi = 0;
-      stato('Collegato · ' + NOME, true);
-      ultimaSpia = ''; segnala(true);
-      applica();
-    } catch (e) {
-      console.warn('[Regia]', e);
-      room = null;
-      tentativi++;
-      stato('Non collegato: riprovo…', false);
-      setTimeout(connetti, Math.min(15000, 2000 * tentativi));
-    }
-  }
-
   // ---------- fine lezione ----------
-  // Il docente preme «Termina lezione»: la postazione si scollega (niente minuti consumati),
-  // mostra la schermata finale e prova a chiudere la finestra.
-  let finita = false;
   function terminaLezione(){
     if (finita) return;
     finita = true;
@@ -315,28 +341,56 @@
     frame.src = 'about:blank'; frame.dataset.url = '';
     mostra('v-fine');
     rilasciaVeglia();
-    const r = room; room = null;
-    if (r) r.disconnect().catch(() => {});
+    staccaLiveKit();
+    if (rif && firebase.auth().currentUser) rif.child('postazioni/' + firebase.auth().currentUser.uid).remove().catch(() => {});
+    if (db) db.goOffline();
     stato('Lezione terminata', false);
     setTimeout(() => { try { window.close(); } catch {} }, 4000); // riesce se Chrome è stato aperto da ARD
   }
-  $('btnRientra').addEventListener('click', () => { finita = false; mostra('v-attesa'); richiediVeglia(); connetti(); });
+  $('btnRientra').addEventListener('click', () => {
+    finita = false; mostra('v-attesa'); richiediVeglia();
+    if (db) db.goOnline();
+    applica();
+  });
 
   // ---------- niente salvaschermo ----------
-  // Screen Wake Lock: finché la pagina è visibile il Mac non avvia salvaschermo né stop dello schermo.
   let veglia = null;
   async function richiediVeglia(){
     if (finita || !('wakeLock' in navigator) || document.visibilityState !== 'visible' || veglia) return;
-    try {
-      veglia = await navigator.wakeLock.request('screen');
-      veglia.addEventListener('release', () => { veglia = null; });
-    } catch (e) { veglia = null; }
+    try { veglia = await navigator.wakeLock.request('screen'); veglia.addEventListener('release', () => { veglia = null; }); }
+    catch (e) { veglia = null; }
   }
   function rilasciaVeglia(){ if (veglia){ veglia.release().catch(() => {}); veglia = null; } }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') richiediVeglia(); });
   setInterval(richiediVeglia, 30000);
   richiediVeglia();
 
+  // ---------- spia per il docente ----------
+  // ok = pagina visibile, in primo piano e a tutto schermo (o in kiosk); fuori = altrimenti; entra = non ha cliccato «Entra»
+  function schermoPieno(){
+    if (document.fullscreenElement) return true;
+    return Math.abs(window.innerHeight - screen.height) < 6 && Math.abs(window.innerWidth - screen.width) < 6; // kiosk
+  }
+  function spia(){
+    if (!entrato) return 'entra';
+    return (document.visibilityState === 'visible' && document.hasFocus() && schermoPieno()) ? 'ok' : 'fuori';
+  }
+  function segnala(forza){
+    if (!rif || !collegatoFb || finita || !firebase.auth().currentUser) return;
+    const s = spia();
+    if (s === ultimaSpia && !forza) return;
+    ultimaSpia = s;
+    rif.child('postazioni/' + firebase.auth().currentUser.uid)
+      .set({ nome: NOME, spia: s, ts: firebase.database.ServerValue.TIMESTAMP })
+      .catch(() => { ultimaSpia = ''; });
+  }
+  ['visibilitychange', 'fullscreenchange'].forEach(ev => document.addEventListener(ev, () => segnala()));
+  window.addEventListener('resize', () => segnala());
+  window.addEventListener('focus', () => segnala());
+  window.addEventListener('blur', () => setTimeout(segnala, 300)); // il focus nell'iframe di «Prova tu» non conta come uscita
+  setInterval(segnala, 2000);
+
+  // ---------- avvio ----------
   function entra(){
     if (entrato) return;
     entrato = true;
@@ -346,42 +400,22 @@
     applica();
     segnala();
   }
-
-  // ---------- spia per il docente ----------
-  // ok = pagina visibile, in primo piano e a tutto schermo (o in kiosk)
-  // fuori = uscito dallo schermo intero, altra scheda/app in primo piano
-  // entra = non ha ancora cliccato «Entra»
-  let ultimaSpia = '';
-  function schermoPieno(){
-    if (document.fullscreenElement) return true;
-    return Math.abs(window.innerHeight - screen.height) < 6 && Math.abs(window.innerWidth - screen.width) < 6; // kiosk
-  }
-  function spia(){
-    if (!entrato) return 'entra';
-    return (document.visibilityState === 'visible' && document.hasFocus() && schermoPieno()) ? 'ok' : 'fuori';
-  }
-  async function segnala(forza){
-    if (!room || room.state !== 'connected') return;
-    const s = spia();
-    if (s === ultimaSpia && !forza) return;
-    ultimaSpia = s;
-    try { await room.localParticipant.setAttributes({ spia: s }); } catch (e) { ultimaSpia = ''; }
-  }
-  ['visibilitychange', 'fullscreenchange', 'resize'].forEach(ev => document.addEventListener(ev, () => segnala()));
-  window.addEventListener('resize', () => segnala());
-  window.addEventListener('focus', () => segnala());
-  window.addEventListener('blur', () => setTimeout(segnala, 300)); // il focus nell'iframe di «Prova tu» non conta come uscita
-  setInterval(segnala, 2000);
-
   $('btnEntra').addEventListener('click', () => { entra(); if (room) room.startAudio().catch(() => {}); });
   $('btnAudio').addEventListener('click', () => {
     if (room) room.startAudio().then(aggiornaBtnAudio).catch(() => {});
     if (yt && ytRif){ yt.unMute(); allineaVideo(); yt.playVideo(); }
-    $('btnAudio').style.display = 'none'; $('btnAudio').textContent = "Tocca per attivare l'audio";
+    $('btnAudio').style.display = 'none';
   });
-  // ?auto=1 salta il pulsante (niente schermo intero: serve un clic dell'utente)
-  if (qs.get('auto') === '1') entra();
-  connetti();
+  if (qs.get('auto') === '1') entra();   // ?auto=1 salta il pulsante (kiosk)
+
+  (async function avvia(tentativo = 1){
+    try { await avviaFirebase(); }
+    catch (e) {
+      console.warn('[Regia]', e);
+      stato('Non collegato: riprovo…', false);
+      setTimeout(() => avvia(tentativo + 1), Math.min(15000, 2000 * tentativo));
+    }
+  })();
 })();
 </script>
 </body>

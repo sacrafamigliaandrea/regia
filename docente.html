@@ -253,6 +253,9 @@
 <footer>Regia di laboratorio · Andrea Cerioli, Animatore Digitale</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@13.4.0/firebase-app-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@13.4.0/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@13.4.0/firebase-database-compat.js"></script>
 <script>
 (() => {
   const { Room, RoomEvent, Track } = LivekitClient;
@@ -263,8 +266,8 @@
     fluido: { res: { width: 1920, height: 1080, frameRate: 24 }, enc: { maxBitrate: 2_500_000, maxFramerate: 24 }, hint: 'motion' },
   };
 
-  const stato = { modo: 'attesa', url: '', titolo: '', msg: 'Occhi al docente', vid: '', vplay: '0', vt: '0', vts: '0' };
-  let room = null, catalogo = [];
+  const stato = { modo: 'attesa', url: '', titolo: '', msg: 'Occhi al docente', vid: '', vplay: '0', vt: '0', vts: 0 };
+  let room = null, catalogo = [];   // room = LiveKit, solo durante la trasmissione
 
   // ---------- utilità ----------
   const leggi = k => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -275,10 +278,12 @@
   $('inStanza').value = leggi('regia_stanza') || 'lab';
 
   // ---------- accesso ----------
+  // Firebase porta stato e postazioni per tutta la lezione (gratis);
+  // LiveKit si collega solo mentre trasmetti lo schermo (lì si consumano i minuti).
   let confermaTermina = false;
-  let cred = null;            // { stanza, pin } solo in memoria, per ricollegarsi da soli
-  let riconnessione = null;   // promessa in corso, per non aprirne due insieme
-  let manuale = false;        // true quando la disconnessione è voluta
+  let cred = null;            // { stanza, pin } solo in memoria, per i gettoni dello schermo
+  let db = null, rif = null, offsetServer = 0, inRegia = false, presenzaAttiva = false;
+  const adesso = () => Date.now() + offsetServer; // orologio del server Firebase, uguale per tutti
 
   async function prendiGettone(stanza, pin){
     const r = await fetch('/api/token', {
@@ -300,7 +305,25 @@
       const dati = await prendiGettone(stanza, pin);
       cred = { stanza: dati.stanza, pin };
       scrivi('regia_stanza', dati.stanza);
-      await avviaStanza(dati.url, dati.token, dati.stanza);
+      if (!firebase.apps.length) firebase.initializeApp(dati.firebase);
+      await firebase.auth().signInWithCustomToken(dati.fbToken);
+      db = firebase.database(); db.goOnline();
+      rif = db.ref('regia/' + dati.stanza);
+      db.ref('.info/serverTimeOffset').on('value', x => { offsetServer = x.val() || 0; });
+      db.ref('.info/connected').on('value', x => {
+        if (!inRegia) return;
+        if (x.val()){ presenza(); pill('In regia · ' + cred.stanza, true); }
+        else pill('Riconnessione…', false);
+      });
+      rif.child('postazioni').on('value', x => aggiornaPostazioni(x.val() || {}));
+      inRegia = true;
+      stato.modo = 'attesa';
+      await presenza();
+      await pubblicaStato();
+      pill('In regia · ' + dati.stanza, true);
+      $('login').classList.add('nascosto');
+      $('regia').classList.remove('nascosto');
+      aggiornaComandoArd(dati.stanza);
     } catch (e) {
       avviso(e.message);
     } finally {
@@ -308,67 +331,39 @@
     }
   }
 
-  async function avviaStanza(url, token, stanza){
-    const r = new Room({ adaptiveStream: false, dynacast: true });
-    r
-      .on(RoomEvent.ParticipantConnected, aggiornaPostazioni)
-      .on(RoomEvent.ParticipantDisconnected, aggiornaPostazioni)
-      .on(RoomEvent.ParticipantAttributesChanged, (changed, p) => { if (p !== r.localParticipant) aggiornaPostazioni(); })
-      .on(RoomEvent.Reconnecting, () => pill('Riconnessione…', false))
-      .on(RoomEvent.Reconnected, () => { pill('In regia · ' + stanza, true); pubblicaStato(); })
-      .on(RoomEvent.Disconnected, () => {
-        if (r !== room) return;               // stanza vecchia già sostituita
-        pill('Disconnesso: mi ricollego…', false);
-        if (!manuale) setTimeout(() => riconnetti().catch(() => {}), 1500);
-      });
-
-    await r.connect(url, token);
-    room = r;
-    pill('In regia · ' + stanza, true);
-    $('login').classList.add('nascosto');
-    $('regia').classList.remove('nascosto');
-    aggiornaComandoArd(stanza);
-    aggiornaPostazioni();
-    await pubblicaStato();
-    // se stavi già trasmettendo, la trasmissione riprende sulla nuova connessione
-    if (tracciaLocale && !tracciaLocale.isMuted) await pubblicaTraccia().catch(() => {});
+  // «docente presente»: sparisce da solo se il Mac docente perde la rete o chiude la pagina
+  async function presenza(){
+    if (!rif) return;
+    const d = rif.child('docente');
+    await d.onDisconnect().remove();
+    await d.set(true);
+    presenzaAttiva = true;
+    pubblicaStato();
   }
 
-  // Ricollega con le credenziali in memoria (tentativi crescenti finché riesce)
-  function riconnetti(){
-    if (riconnessione) return riconnessione;
-    riconnessione = (async () => {
-      for (let t = 1; t <= 8; t++){
-        try {
-          pill('Mi ricollego… (' + t + ')', false);
-          const vecchia = room; room = null;
-          if (vecchia){ manuale = true; await vecchia.disconnect().catch(() => {}); manuale = false; }
-          const dati = await prendiGettone(cred.stanza, cred.pin);
-          await avviaStanza(dati.url, dati.token, dati.stanza);
-          return;
-        } catch (e) {
-          console.warn('[Regia] riconnessione', e);
-          await new Promise(res => setTimeout(res, Math.min(10000, 1500 * t)));
-        }
-      }
-      pill('Non collegato: ricarica la pagina', false);
-      throw new Error('Riconnessione non riuscita');
-    })().finally(() => { riconnessione = null; });
-    return riconnessione;
+  async function esci(messaggio){
+    inRegia = false; presenzaAttiva = false;
+    if (rif){
+      rif.child('postazioni').off();
+      await rif.child('docente').remove().catch(() => {});
+    }
+    if (db) db.goOffline();
+    $('regia').classList.add('nascosto'); $('login').classList.remove('nascosto');
+    avviso(messaggio || '');
+    pill('Non collegato', false);
   }
 
-  const collegato = () => room && room.state === 'connected';
-
-  // Lo stato vive negli attributi del docente: chi si collega dopo lo riceve subito
+  // Lo stato vive su Firebase: chi si collega dopo lo riceve subito
   async function pubblicaStato(){
     document.querySelectorAll('.modo').forEach(b => b.classList.toggle('on', b.dataset.modo === stato.modo));
-    if (!collegato()) return;
+    if (!rif || !inRegia) return;
     try {
-      await room.localParticipant.setAttributes({
+      await rif.child('stato').set({
         modo: stato.modo, url: stato.url, titolo: stato.titolo, msg: stato.msg,
-        vid: stato.vid, vplay: stato.vplay, vt: stato.vt, vts: stato.vts
+        vid: stato.vid, vplay: stato.vplay, vt: stato.vt, vts: stato.vts,
+        aggiornato: firebase.database.ServerValue.TIMESTAMP
       });
-    } catch (e) { console.warn('[Regia] attributi', e); }
+    } catch (e) { console.warn('[Regia] stato', e); }
   }
 
   function impostaModo(modo){
@@ -382,6 +377,7 @@
       $('inYt').focus();
       return;
     }
+    if (modo === 'live' && !tracciaLocale){ condividi(); return; } // «Guardate me» senza schermo: prima scegli la scheda
     if (stato.modo === 'video' && modo !== 'video' && ytDoc && stato.vplay === '1') ytComando('pausa', false);
     stato.modo = modo;
     pubblicaStato();
@@ -436,7 +432,7 @@
       ytDoc.cueVideoById(id);
     }
     await ytPronto;
-    stato.vid = id; stato.vplay = '0'; stato.vt = '0'; stato.vts = String(Date.now());
+    stato.vid = id; stato.vplay = '0'; stato.vt = '0'; stato.vts = adesso();
     ['ytPlay', 'ytIndietro', 'ytAvanti', 'ytBarra'].forEach(k => $(k).disabled = false);
     $('ytInfo').textContent = 'Video pronto. Premi «Video» (tasto 5) per mostrarlo alle postazioni, poi «Play per tutti».';
     uiPlay();
@@ -455,7 +451,7 @@
     if (azione === 'play'){ ytDoc.playVideo(); stato.vplay = '1'; }
     if (azione === 'pausa'){ ytDoc.pauseVideo(); stato.vplay = '0'; }
     if (azione === 'salta'){ t = Math.min(Math.max(0, valore), durata || valore); ytDoc.seekTo(t, true); }
-    stato.vt = t.toFixed(2); stato.vts = String(Date.now());
+    stato.vt = t.toFixed(2); stato.vts = adesso();
     uiPlay();
     if (pubblica) pubblicaStato();
   }
@@ -475,7 +471,32 @@
 
   function msgSchermo(txt){ const m = $('msgSchermo'); m.textContent = txt || ''; m.classList.toggle('on', !!txt); }
 
+  const collegatoLk = () => room && room.state === 'connected';
+  let lkCollegamento = null;
+
+  // Collega LiveKit (solo per trasmettere). Se la rete cade mentre trasmetti, si ricollega e ripubblica.
+  function collegaLiveKit(){
+    if (collegatoLk()) return Promise.resolve();
+    if (lkCollegamento) return lkCollegamento;
+    lkCollegamento = (async () => {
+      const dati = await prendiGettone(cred.stanza, cred.pin);
+      const r = new Room({ adaptiveStream: false, dynacast: true });
+      r.on(RoomEvent.Disconnected, () => {
+        if (room !== r) return;
+        room = null;
+        if (tracciaLocale && inRegia){
+          msgSchermo('Connessione dello schermo caduta: mi ricollego…');
+          setTimeout(() => collegaLiveKit().then(pubblicaTraccia).then(() => msgSchermo('')).catch(e => msgSchermo('La trasmissione non riparte: ' + e.message)), 1500);
+        }
+      });
+      await r.connect(dati.url, dati.token);
+      room = r;
+    })().finally(() => { lkCollegamento = null; });
+    return lkCollegamento;
+  }
+
   async function pubblicaTraccia(){
+    if (!tracciaLocale) return;
     const lp = room.localParticipant;
     const pv = lp.getTrackPublication(Track.Source.ScreenShare);
     if (!(pv && pv.track === tracciaLocale)){
@@ -512,27 +533,32 @@
     }
     for (let tentativo = 1; tentativo <= 2; tentativo++){
       try {
-        if (!collegato()) await riconnetti();
+        await collegaLiveKit();
         await pubblicaTraccia();
-        if (stato.modo === 'attesa'){ stato.modo = 'live'; pubblicaStato(); }
+        if (stato.modo !== 'live'){ stato.modo = 'live'; pubblicaStato(); }
         return;
       } catch (e) {
         console.warn('[Regia] pubblicazione', e);
-        if (tentativo === 1){ msgSchermo('Connessione instabile: mi ricollego e riprovo…'); await riconnetti().catch(() => {}); }
-        else msgSchermo('La trasmissione non parte: controlla la rete e riprova. (' + e.message + ')');
+        const r = room; room = null; if (r) r.disconnect().catch(() => {});
+        if (tentativo === 2) msgSchermo('La trasmissione non parte: controlla la rete e riprova. (' + e.message + ')');
+        else msgSchermo('Connessione instabile: riprovo…');
       }
     }
   }
 
+  // Interrompe la trasmissione e scollega LiveKit: da qui in poi nessun minuto consumato
   async function interrompi(){
     const tracce = [tracciaLocale, tracciaAudio].filter(Boolean);
     tracciaLocale = null; tracciaAudio = null;
     for (const t of tracce){
-      if (collegato()) await room.localParticipant.unpublishTrack(t).catch(() => {});
+      if (collegatoLk()) await room.localParticipant.unpublishTrack(t).catch(() => {});
       t.stop();
     }
+    const r = room; room = null;
+    if (r) await r.disconnect().catch(() => {});
     uiSchermo(false);
     msgSchermo('');
+    if (stato.modo === 'live'){ stato.modo = 'attesa'; pubblicaStato(); }
   }
   function uiSchermo(attivo){
     $('anteprima').classList.toggle('live', attivo);
@@ -544,11 +570,10 @@
   }
 
   // ---------- postazioni ----------
-  function aggiornaPostazioni(){
-    if (!room) return;
+  function aggiornaPostazioni(elenco){
     const ordine = { fuori: 0, entra: 1, ok: 2 };
-    const pcs = [...room.remoteParticipants.values()]
-      .map(p => ({ nome: p.name || p.identity, spia: (p.attributes && p.attributes.spia) || 'entra' }))
+    const pcs = Object.values(elenco || {})
+      .map(p => ({ nome: String(p.nome || 'Postazione'), spia: p.spia || 'entra' }))
       .sort((a, b) => (ordine[a.spia] - ordine[b.spia]) || a.nome.localeCompare(b.nome, 'it', { numeric: true }));
     $('conta').innerHTML = pcs.length + ' <small>' + (pcs.length === 1 ? 'postazione' : 'postazioni') + '</small>';
     const n = k => pcs.filter(p => p.spia === k).length;
@@ -558,11 +583,11 @@
     if (!pcs.length){ box.innerHTML = '<span class="vuoto">Nessuna postazione collegata</span>'; return; }
     const etichetta = { ok: 'attenta', fuori: 'fuori dalla Regia', entra: 'non ha cliccato Entra' };
     pcs.forEach(p => {
-      const s = document.createElement('span');
-      s.className = 'pc' + (p.spia === 'ok' ? '' : ' ' + p.spia);
-      s.title = etichetta[p.spia] || '';
-      s.append(document.createElement('i'), document.createTextNode(p.nome));
-      box.appendChild(s);
+      const el = document.createElement('span');
+      el.className = 'pc' + (p.spia === 'ok' ? '' : ' ' + p.spia);
+      el.title = etichetta[p.spia] || '';
+      el.append(document.createElement('i'), document.createTextNode(p.nome));
+      box.appendChild(el);
     });
   }
 
@@ -639,15 +664,9 @@
     $('btnTermina').lastChild.textContent = 'Lezione terminata';
     // dopo qualche secondo il docente si scollega a sua volta; per ripartire basta un nuovo «Collega»
     setTimeout(async () => {
-      manuale = true;
-      const r = room; room = null;
-      if (r) await r.disconnect().catch(() => {});
-      manuale = false;
       stato.modo = 'attesa';
       $('btnTermina').lastChild.textContent = 'Termina lezione';
-      $('regia').classList.add('nascosto'); $('login').classList.remove('nascosto');
-      avviso('Lezione terminata: tutte le postazioni sono state scollegate.');
-      pill('Non collegato', false);
+      await esci('Lezione terminata: tutte le postazioni sono state scollegate.');
     }, 6000);
   });
   $('btnYt').addEventListener('click', () => caricaVideo($('inYt').value));
@@ -663,7 +682,7 @@
     navigator.clipboard.writeText(testo).then(() => { b.textContent = 'Copiato'; setTimeout(() => b.textContent = prima, 1500); });
   }));
   document.addEventListener('keydown', e => {
-    if (!room || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (!inRegia || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
     const m = { '1': 'attesa', '2': 'live', '3': 'occhi', '4': 'prova', '5': 'video' }[e.key];
     if (m) impostaModo(m);
   });
